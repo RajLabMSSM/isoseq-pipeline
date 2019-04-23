@@ -15,12 +15,9 @@ outFolder = config['outFolder']
 inFolder = config['inFolder']
 rule all:
 	input:
-		"multiqc/multiqc_report.html"
-		#expand("qc/{samp}.metrics.tsv", samp = samples),
-		#expand("qc/{samp}.flagstat.txt", samp = samples),
-		#expand("qc/{samp}.idxstat.txt", samp = samples),  
+		expand("qc/{samp}.metrics.tsv", samp = samples),  
 		#reference + ".mmi",
-		#expand("sorted/{samp}_hq_transcripts_sorted.bam", samp = samples)
+		expand("sorted/{samp}_hq_transcripts_sorted.bam", samp = samples)
 #		expand("{outFolder}{samples}_hq_transcripts_sorted.bam", samples = samples, outFolder = outFolder)
 	
 rule minimapIndex:
@@ -30,11 +27,11 @@ rule minimapIndex:
 		"minimap2 -d {output} {input}" 
 rule minimap:
 	input: 
-		fastq = "fastq/{samples}_hq_transcripts.fastq",
+		fastq = "fastq/{sample}_hq_transcripts.fastq",
 		ref = referenceFa + ".fa",
 		index = referenceFa + ".mmi"
 	params: " -ax splice -uf -C5 "	
-	output: sam = "aligned/{samples}_hq_transcripts.sam"
+	output: sam = "aligned/{sample}_hq_transcripts.sam"
 	shell:
 		"minimap2 {params} {input.ref} {input.fastq} > {output.sam}"
 
@@ -53,25 +50,13 @@ rule collapseAnnotation:
 	params: script = "scripts/collapse_annotation.py"
 	shell: "python {params.script} {input} {output}"
 
-rule QC:
+rule rnaseqc:
 	input:
 		geneGTF = referenceGTF + ".genes.gtf",
 		bam = "sorted/{samples}_hq_transcripts_sorted.bam"
 	output:
-		rnaseqc = "qc/{samples}.metrics.tsv",
-		flagstat = "qc/{samples}.flagstat.txt",
-		idxstat = "qc/{samples}.idxstat.txt"
-	shell:	
-		"samtools flagstat {input.bam} > {output.flagstat};"
-		"samtools idxstats {input.bam} > {output.idxstat};"
-		"rnaseqc {input.geneGTF} {input.bam} -s {wildcards.samples} --coverage qc/"
-
-rule multiQC:
-	input:
-                expand("qc/{samp}.metrics.tsv", samp = samples),
-                expand("qc/{samp}.flagstat.txt", samp = samples),
-                expand("qc/{samp}.idxstat.txt", samp = samples)
-	output:
-		"multiqc/multiqc_report.html"
+		"rnaseqc/{sample}.metrics.tsv"
 	shell:
-		"multiqc -f --outdir multiqc/ ." 
+		"rnaseqc {input.geneGTF} {input.bam} rnaseqc/"
+		" --unpaired --coverage --verbose --mapping-quality 0 --base-mismatch=1000 --detection-threshold=1"
+

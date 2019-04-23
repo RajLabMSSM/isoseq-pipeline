@@ -1,7 +1,9 @@
 metadata:
        "metadata.tsv" 
-reference:
+referenceFa:
         "/SAN/vyplab/HuRNASeq/minimap2/references/hg38"
+referenceGTF:
+        "/SAN/vyplab/HuRNASeq/GENCODE/gencode.v30.annotation.gtf"
 inFolder:
         "fastq/"
 outFolder:

@@ -1,0 +1,8 @@
+metadata:
+       "metadata.tsv" 
+reference:
+        "/SAN/vyplab/HuRNASeq/minimap2/references/hg38"
+inFolder:
+        "fastq/"
+outFolder:
+        "processed/"

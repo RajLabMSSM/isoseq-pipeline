@@ -1,0 +1,5 @@
+code	sample	fastq
+5245	MNP_Iso_BS62H9_Atailprep	/SAN/vyplab/IoN_RNAseq/C9_locus_long_reads/IsoSeq3/005245/tasks/pbcoretools.tasks.bam2fastq_transcripts-0/hq_transcripts.fastq
+5246	MNP_Iso_BS6_Atailprep	/SAN/vyplab/IoN_RNAseq/C9_locus_long_reads/IsoSeq3/005246/tasks/pbcoretools.tasks.bam2fastq_transcripts-0/hq_transcripts.fastq
+5247	MNP_Iso_BS62H9_STDprep	/SAN/vyplab/IoN_RNAseq/C9_locus_long_reads/IsoSeq3/005247/tasks/pbcoretools.tasks.bam2fastq_transcripts-0/hq_transcripts.fastq
+5248	MNP_Iso_BS6_STDprepa	/SAN/vyplab/IoN_RNAseq/C9_locus_long_reads/IsoSeq3/005248/tasks/pbcoretools.tasks.bam2fastq_transcripts-0/hq_transcripts.fastq

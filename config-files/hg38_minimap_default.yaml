@@ -1,7 +1,14 @@
+fastqFolder:
+        "fastq/"
+dataCode:
+        "hg38_minimap_default"
+minimapParams:
+        " -ax splice -uf -C5 "
 metadata:
        "metadata.tsv" 
 referenceFa:
-        "/SAN/vyplab/HuRNASeq/minimap2/references/hg38"
+        # omit the .fa
+        "reference/hg38"
 referenceGTF:
         "/SAN/vyplab/HuRNASeq/GENCODE/gencode.v30.annotation.gtf"
 inFolder:

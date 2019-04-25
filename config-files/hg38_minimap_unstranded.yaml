@@ -1,9 +1,9 @@
 fastqFolder:
         "fastq/"
 dataCode:
-        "hg38_minimap_default"
+        "hg38_minimap_unstranded"
 minimapParams:
-        " -ax splice -uf -C5 "
+        " -ax splice "
 metadata:
        "samples.tsv" 
 referenceFa:

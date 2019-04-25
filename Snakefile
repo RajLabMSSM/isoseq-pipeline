@@ -9,7 +9,7 @@ samples = metaDF['sample']
 #print(samples)
 
 dataCode = config['dataCode']
-outFolder = dataCode + "/"
+outFolder = "results/" + dataCode + "/"
 
 fastqFolder = config['fastqFolder']
 
@@ -18,11 +18,11 @@ referenceGTF = config['referenceGTF']
 
 rule all:
 	input:
-		outFolder + "multiqc/multiqc_report.html"
-		#expand(outFolder + "rnaseqc/{samp}.metrics.tsv", samp = samples),  
+		outFolder + "multiqc/multiqc_report.html",
+		expand(outFolder + "rnaseqc/{samp}.metrics.tsv", samp = samples),
 		#reference + ".mmi",
-		#expand(outFolder + "sorted/{samp}_hq_transcripts_sorted.bam", samp = samples)
-#		#expand("{outFolder}{samples}_hq_transcripts_sorted.bam", samples = samples, outFolder = outFolder)
+		expand(outFolder + "sorted/{samp}_transcripts_sorted.bam", samp = samples)
+#		#expand("{outFolder}{samples}_transcripts_sorted.bam", samples = samples, outFolder = outFolder)
 	
 rule minimapIndex:
 	input: referenceFa + ".fa"
@@ -31,27 +31,23 @@ rule minimapIndex:
 		"minimap2 -d {output} {input}" 
 rule minimap:
 	input: 
-		hq_fastq = fastqFolder + "{sample}_hq_transcripts.fastq",
-		lq_fastq = fastqFolder + "{sample}_lq_transcripts.fastq",
+		fastq = fastqFolder + "{sample}_transcripts.fastq",
 		ref = referenceFa + ".fa",
 		index = referenceFa + ".mmi"
 	params: config['minimapParams']
 	output: 
-		hq_sam = outFolder + "aligned/{sample}_hq_transcripts.sam",
-		lq_sam = outFolder + "aligned/{sample}_lq_transcripts.sam"
+		sam = outFolder + "aligned/{sample}_transcripts.sam",
 	shell:
-		"minimap2 {params} {input.index} {input.hq_fastq} > {output.hq_sam};"
-		"minimap2 {params} {input.index} {input.lq_fastq} > {output.lq_sam}"
+		"minimap2 {params} {input.index} {input.fastq} > {output.sam};"
 
 rule samtools:
-	input: outFolder + "aligned/{samples}_hq_transcripts.sam"
+	input: outFolder + "aligned/{samples}_transcripts.sam"
 	output:
-		bam = outFolder + "sorted/{samples}_hq_transcripts_sorted.bam",
-		bai = outFolder + "sorted/{samples}_hq_transcripts_sorted.bam.bai"
+		bam = outFolder + "sorted/{samples}_transcripts_sorted.bam",
+		bai = outFolder + "sorted/{samples}_transcripts_sorted.bam.bai"
 	shell:
 		"samtools view -bh {input} | samtools sort > {output.bam}; "
 		"samtools index {output.bam}"
-
 rule collapseAnnotation:
 	input: referenceGTF 
 	output: referenceGTF + ".genes.gtf"
@@ -61,7 +57,7 @@ rule collapseAnnotation:
 rule rnaseqc:
 	input:
 		geneGTF = referenceGTF + ".genes.gtf",
-		bam = outFolder + "sorted/{samples}_hq_transcripts_sorted.bam"
+		bam = outFolder + "sorted/{samples}_transcripts_sorted.bam"
 	params:
 		out = outFolder + "rnaseqc/"
 	output:
@@ -73,7 +69,7 @@ rule rnaseqc:
 
 rule samtoolsQC:
 	input:
-		bam = outFolder + "sorted/{samples}_hq_transcripts_sorted.bam"
+		bam = outFolder + "sorted/{samples}_transcripts_sorted.bam"
 	output:
 		flagstat = outFolder + "qc/{samples}.flagstat.txt",
 		idxstat = outFolder + "qc/{samples}.idxstat.txt"

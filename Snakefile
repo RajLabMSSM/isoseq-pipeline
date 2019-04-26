@@ -48,6 +48,7 @@ rule samtools:
 	shell:
 		"samtools view -bh {input} | samtools sort > {output.bam}; "
 		"samtools index {output.bam}"
+
 rule collapseAnnotation:
 	input: referenceGTF 
 	output: referenceGTF + ".genes.gtf"

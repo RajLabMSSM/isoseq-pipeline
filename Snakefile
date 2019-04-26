@@ -64,6 +64,7 @@ rule rnaseqc:
 	output:
 		outFolder + "rnaseqc/{samples}.metrics.tsv"
 	shell:
+		"ml rnaseqc;"
 		"rnaseqc {input.geneGTF} {input.bam} {params.out} "
 		" --sample={wildcards.samples} "
 		" --unpaired --coverage --verbose --mapping-quality 0 --base-mismatch=1000 --detection-threshold=1"
@@ -86,4 +87,5 @@ rule multiQC:
 	output:
 		outFolder + "multiqc/multiqc_report.html"
 	shell:
+		"export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
 		"multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 

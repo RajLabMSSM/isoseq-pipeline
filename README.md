@@ -12,10 +12,16 @@
 ## Conda recipe
 
 ```
-conda create -n isoseq-pipeline python=3.6 snakemake samtools rnaseqc minimap2
+conda create -n isoseq-pipeline python=3.6 snakemake samtools minimap2
 conda activate isoseq-pipeline
-pip install bx-python
 pip install multiqc
+pip install bx-python
+```
+
+## Running on test data
+
+```
+snakemake --configfile config-files/test_config.yaml
 ```
 
 ## Resources

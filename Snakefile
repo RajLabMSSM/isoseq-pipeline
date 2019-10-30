@@ -21,8 +21,8 @@ rule all:
 		outFolder + "multiqc/multiqc_report.html",
 		expand(outFolder + "rnaseqc/{samp}.metrics.tsv", samp = samples),
 		#reference + ".mmi",
-		expand(outFolder + "sorted/{samp}_transcripts_sorted.bam", samp = samples)
-#		#expand("{outFolder}{samples}_transcripts_sorted.bam", samples = samples, outFolder = outFolder)
+		expand(outFolder + "sorted/{samp}_sorted.bam", samp = samples)
+#		#expand("{outFolder}{samples}_sorted.bam", samples = samples, outFolder = outFolder)
 	
 rule minimapIndex:
 	input: referenceFa + ".fa"
@@ -31,20 +31,20 @@ rule minimapIndex:
 		"minimap2 -d {output} {input}" 
 rule minimap:
 	input: 
-		fastq = fastqFolder + "{sample}_transcripts.fastq",
+		fastq = fastqFolder + "{sample}.fastq.gz",
 		ref = referenceFa + ".fa",
 		index = referenceFa + ".mmi"
 	params: config['minimapParams']
 	output: 
-		sam = outFolder + "aligned/{sample}_transcripts.sam",
+		sam = outFolder + "aligned/{sample}.sam",
 	shell:
 		"minimap2 {params} {input.index} {input.fastq} > {output.sam};"
 
 rule samtools:
-	input: outFolder + "aligned/{samples}_transcripts.sam"
+	input: outFolder + "aligned/{samples}.sam"
 	output:
-		bam = outFolder + "sorted/{samples}_transcripts_sorted.bam",
-		bai = outFolder + "sorted/{samples}_transcripts_sorted.bam.bai"
+		bam = outFolder + "sorted/{samples}_sorted.bam",
+		bai = outFolder + "sorted/{samples}_sorted.bam.bai"
 	shell:
 		"samtools view -bh {input} | samtools sort > {output.bam}; "
 		"samtools index {output.bam}"
@@ -53,12 +53,12 @@ rule collapseAnnotation:
 	input: referenceGTF 
 	output: referenceGTF + ".genes.gtf"
 	params: script = "scripts/collapse_annotation.py"
-	shell: "python {params.script} {input} {output}"
+	shell: "/sc/orga/work/humphj04/conda/envs/isoseq-pipeline/bin/python {params.script} {input} {output}"
 
 rule rnaseqc:
 	input:
 		geneGTF = referenceGTF + ".genes.gtf",
-		bam = outFolder + "sorted/{samples}_transcripts_sorted.bam"
+		bam = outFolder + "sorted/{samples}_sorted.bam"
 	params:
 		out = outFolder + "rnaseqc/"
 	output:
@@ -71,7 +71,7 @@ rule rnaseqc:
 
 rule samtoolsQC:
 	input:
-		bam = outFolder + "sorted/{samples}_transcripts_sorted.bam"
+		bam = outFolder + "sorted/{samples}_sorted.bam"
 	output:
 		flagstat = outFolder + "qc/{samples}.flagstat.txt",
 		idxstat = outFolder + "qc/{samples}.idxstat.txt"

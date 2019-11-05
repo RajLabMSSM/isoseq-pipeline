@@ -84,6 +84,8 @@ Future:
 * [Cogent - reconstruct coding genome from long reads without a reference genome](https://github.com/Magdoll/Cogent)
 
 
+* [IsoAnnotLite - annotate novel isoforms from PacBio reads](http://tappas.org/what-if-i-come-from-pacbio/)
+
 ## Papers
 
 [Kuo et al - Illuminating the dark side of the human transcriptome](https://www.biorxiv.org/content/biorxiv/early/2019/09/24/780015.full.pdf)

@@ -18,6 +18,7 @@ referenceGTF = config['referenceGTF']
 
 rule all:
 	input:
+		expand(fastqFolder + "{sample}_transcripts.classification.txt", sample = samples),
 		outFolder + "multiqc/multiqc_report.html",
 		expand(outFolder + "rnaseqc/{samp}.metrics.tsv", samp = samples),
 		#reference + ".mmi",
@@ -89,3 +90,21 @@ rule multiQC:
 	shell:
 		"export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
 		"multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 
+
+rule SQUANTI:
+	input:
+		fastq = fastqFolder + "{sample}_transcripts.fastq"
+	output:
+		report = fastqFolder + "{sample}_transcripts.classification.txt"
+	params:
+		nCores = 4,
+		gtf = referenceGTF + ".genes.gtf",
+		genome = referenceFa + ".fa",
+		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQUANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified.gz",
+		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQUANTI2/hg38.cage_peak_phase1and2combined_coord.bed.gz",
+		polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQUANTI2/human.polyA.list.txt"
+	shell:
+		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence;"
+		"python squanti_qc2.py -t {params.nCores} "
+		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
+		" {input.fastq} {params.gtf} {params.genome} "

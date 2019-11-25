@@ -12,7 +12,7 @@
 ## Conda recipe
 
 ```
-conda create -n isoseq-pipeline python=3.6 snakemake samtools minimap2
+conda create -c biopython -n isoseq-pipeline python=3.6 snakemake samtools=1.9 minimap2
 conda activate isoseq-pipeline
 pip install multiqc
 pip install bx-python
@@ -22,8 +22,14 @@ pip install bx-python
 
 ```
 mkdir reference
+# if you want hg19:
 ln -s /hpc/users/humphj04/GENCODE/gencode.v30lift37.annotation.gtf reference/gencode.v30lift37.annotation.gtf
 ln -s /sc/orga/projects/ad-omics/ricardo/Data/1000G_phase1/human_g1k_v37.fasta reference/human_g1k_v37.fa
+
+# hg38
+ln -s /sc/orga/projects/ad-omics/data/references/hg38_reference/hg38.fa reference/hg38.fa
+cp /sc/orga/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf.gz reference/gencode.v30.annotation.gtf.gz
+gunzip reference/gencode.v30.annotation.gtf.gz
 ```
 
 ## Running on test data
@@ -77,6 +83,8 @@ Future:
 
 * [Cogent - reconstruct coding genome from long reads without a reference genome](https://github.com/Magdoll/Cogent)
 
+
+* [IsoAnnotLite - annotate novel isoforms from PacBio reads](http://tappas.org/what-if-i-come-from-pacbio/)
 
 ## Papers
 

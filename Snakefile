@@ -18,7 +18,7 @@ referenceGTF = config['referenceGTF']
 
 rule all:
 	input:
-		expand(fastqFolder + "{sample}.classification.txt", sample = samples),
+		expand(outFolder + "SQANTI2/{sample}/{sample}.classification.txt", sample = samples),
 		#outFolder + "multiqc/multiqc_report.html",
 		#expand(outFolder + "rnaseqc/{samp}.metrics.tsv", samp = samples),
 		#reference + ".mmi",
@@ -32,7 +32,7 @@ rule minimapIndex:
 		"minimap2 -d {output} {input}" 
 rule minimap:
 	input: 
-		fastq = fastqFolder + "{sample}.fastq.gz",
+		fastq = fastqFolder + "{sample}.fastq",
 		ref = referenceFa + ".fa",
 		index = referenceFa + ".mmi"
 	params: config['minimapParams']
@@ -91,23 +91,44 @@ rule multiQC:
 		"export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
 		"multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 
 
+rule CollapseIsoforms:
+	input:
+		fastq = fastqFolder + "{sample}.fastq",
+		sam = outFolder + "aligned/{sample}.sam"
+	output:
+		outFolder + "collapsed/{sample}.collapsed.gff"
+	params:
+		out = outFolder + "collapsed/{sample}",
+		samSorted = outFolder + "aligned/{sample}.sorted.sam",
+		cupcakePath = "/hpc/users/humphj04/pipelines/cDNA_Cupcake/build/scripts-3.6"
+	shell:
+		"sort -k 3,3 -k 4,4n {input.sam} > {params.samSorted}; " 
+		"{params.cupcakePath}/collapse_isoforms_by_sam.py "
+		" --input {input.fastq} --fq "
+   		"-s {params.samSorted} --dun-merge-5-shorter -o {params.out}"
+
 rule SQANTI:
 	input:
-		fastq = fastqFolder + "{sample}.fastq.gz"
+		fastq = outFolder + "collapsed/{sample}.collapsed.rep.fq"
 	output:
-		report = fastqFolder + "{sample}.classification.txt"
+		report = outFolder + "SQANTI2/{sample}/{sample}.classification.txt"
 	params:
+		sample = "{sample}",
+		outDir = outFolder + "SQANTI2/{sample}/",
 		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
 		sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
 		nCores = 4,
 		gtf = referenceGTF + ".genes.gtf",
 		genome = referenceFa + ".fa",
-		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified.gz",
-		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed.gz",
+		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed",
 		polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
 	shell:
-	`	"ml R/3.6.0; "
+		"export PATH=/sc/orga/projects/ad-omics/data/software/UCSC/:$PATH;"
+		"ml R/3.6.0; "
 		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
 		"{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} "
+		" --dir {params.outDir} "
+		" --out {params.outDir}/{params.sample} "
 		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
 		" {input.fastq} {params.gtf} {params.genome} "

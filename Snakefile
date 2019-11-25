@@ -106,6 +106,7 @@ rule SQANTI:
 		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed.gz",
 		polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
 	shell:
+	`	"ml R/3.6.0; "
 		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
 		"{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} "
 		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"

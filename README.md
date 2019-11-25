@@ -8,14 +8,35 @@
 - rnaseqc
 - bx-python
 - multiqc
-
+- bcbiogff
+- gffread
+- biopython
+- [cDNA_cupcake](https://github.com/Magdoll/cDNA_Cupcake)
+- [SQUANTI2](https://github.com/Magdoll/SQANTI2)
+- [gtfToGenePred](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/)
 ## Conda recipe
 
 ```
-conda create -c biopython -n isoseq-pipeline python=3.6 snakemake samtools=1.9 minimap2
+conda create -c bioconda -n isoseq-pipeline python=3.7 snakemake samtools=1.9 minimap2
+conda install -n isoseq-pipeline psutil biopython
+conda install -n isoseq-pipeline -c bioconda bcbiogff gffread
 conda activate isoseq-pipeline
 pip install multiqc
 pip install bx-python
+
+# install cupcake_cDNA - Liz Tseng's code
+git clone git@github.com:Magdoll/cDNA_Cupcake.git
+cd cDNA_Cupcake
+python setup.py build
+python setup.py install --prefix=<where your conda environment is installed>
+cd ..
+
+# clone SQANTI2
+git clone git@github.com:Magdoll/SQANTI2.git
+# download UCSC tool and put in PATH
+wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/gtfToGenePred scripts/
+chmod +x scripts/gtfToGenePred
+echo "export PATH="$PWD/scripts/:\$PATH >> ~/.bashrc"
 ```
 
 ## Symlink reference files
@@ -26,7 +47,7 @@ mkdir reference
 ln -s /hpc/users/humphj04/GENCODE/gencode.v30lift37.annotation.gtf reference/gencode.v30lift37.annotation.gtf
 ln -s /sc/orga/projects/ad-omics/ricardo/Data/1000G_phase1/human_g1k_v37.fasta reference/human_g1k_v37.fa
 
-# hg38
+# hg38 - SQANTI only supports this
 ln -s /sc/orga/projects/ad-omics/data/references/hg38_reference/hg38.fa reference/hg38.fa
 cp /sc/orga/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf.gz reference/gencode.v30.annotation.gtf.gz
 gunzip reference/gencode.v30.annotation.gtf.gz

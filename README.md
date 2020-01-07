@@ -19,7 +19,9 @@
 ```
 conda create -c bioconda -n isoseq-pipeline python=3.7 snakemake samtools=1.9 minimap2
 conda install -n isoseq-pipeline psutil biopython
-conda install -n isoseq-pipeline -c bioconda bcbiogff gffread
+conda install -n isoseq-pipeline -c bioconda isoseq3=3.2 pbccs=4.0
+conda install -n isoseq-pipeline -c bioconda bcbiogff gffread lima pbcoretools bamtools pysam ucsc-gtftogenepred openssl=1.0 pbbam
+
 conda activate isoseq-pipeline
 pip install multiqc
 pip install bx-python
@@ -33,7 +35,8 @@ cd ..
 
 # clone SQANTI2
 git clone git@github.com:Magdoll/SQANTI2.git
-# download UCSC tool and put in PATH
+
+# if doesn't install via conda then download UCSC tool and put in PATH
 wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/gtfToGenePred scripts/
 chmod +x scripts/gtfToGenePred
 echo "export PATH="$PWD/scripts/:\$PATH >> ~/.bashrc"
@@ -83,9 +86,13 @@ Future:
 * How isoseq works:  
     - https://github.com/PacificBiosciences/IsoSeq3/blob/master/README_v3.1.md
 
+* Installing isoseq on conda:
+   - https://github.com/PacificBiosciences/IsoSeq_SA3nUP/wiki/Tutorial:-Installing-and-Running-Iso-Seq-3-using-Conda
+
 * What to do with the output of Isoseq:
     * https://github.com/Magdoll/cDNA_Cupcake/wiki/Best-practice-for-aligning-Iso-Seq-to-reference-genome:-minimap2,-GMAP,-STAR,-BLAT
     * https://github.com/PacificBiosciences/IsoSeq_SA3nUP/wiki/What-to-do-after-Iso-Seq-Cluster%3F
+
 
 
 ## Tools

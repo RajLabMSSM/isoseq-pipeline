@@ -1,0 +1,27 @@
+__default__:
+  #partition: chimera
+  queue: acc_als-omics
+  cores: 1
+  mem: 3750
+  time: '60'
+  name: $(basename $(pwd)):{rule}:{wildcards}
+  output: logs/{rule}:{wildcards}.stdout
+  error: logs/{rule}:{wildcards}.stderr
+# extractJunctions:
+#   time: '120:00'
+#   cores: 1
+#   mem: 3750
+CCS:
+   time: 72:00
+   queue: 'long'
+   mem: 25000
+   cores: 36
+LIMA:
+   cores: 2
+   mem: 12000
+refine:
+   cores: 4
+   mem: 25000
+cluster:
+   cores: 20
+   mem: 30000

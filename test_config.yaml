@@ -8,7 +8,8 @@ referenceFa:
         # omit the .fa
         "/sc/orga/projects/ad-omics/data/references/hg38_reference/hg38"
 referenceGTF:
-        "/sc/orga/projects/ad-omics/data/references//hg38_reference/GENCODE/gencode.v30.annotation.gtf.gz"
+        # cannot be gzipped
+        "/sc/orga/projects/ad-omics/data/references//hg38_reference/GENCODE/gencode.v30.annotation.gtf"
 rawFolder:
         ""
 outFolder:

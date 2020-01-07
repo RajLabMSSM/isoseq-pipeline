@@ -7,7 +7,7 @@ metaDF = pd.read_csv(metadata, sep = '\t')
 samples = metaDF['sample']
 
 #print(samples)
-
+rawFolder = config['rawFolder']
 dataCode = config['dataCode']
 
 referenceFa = config['referenceFa']
@@ -17,10 +17,13 @@ primers = "reference/NEB_primers_01_2019.fa"
 
 rule all:
 	input:
-		expand( "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt", sample = samples)
+		expand( "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt", sample = samples),
+		expand( "{sample}/SQANTI2/{sample}_classification.txt", sample = samples)
 	#	expand(fastqFolder + "{sample}.classification.txt", sample = samples),
 		# "multiqc/multiqc_report.html",
 		#expand( "rnaseqc/{samp}.metrics.tsv", samp = samples),
+		#outFolder + "multiqc/multiqc_report.html",
+		#expand(outFolder + "rnaseqc/{samp}.metrics.tsv", samp = samples),
 		#reference + ".mmi",
 		#expand( "sorted/{samp}_sorted.bam", samp = samples)
 #		#expand("{outFolder}{samples}_sorted.bam", samples = samples, outFolder = outFolder)
@@ -54,7 +57,7 @@ rule isoseq_lima:
 	output:
 		 "{sample}/isoseq3-lima/{sample}.fl.bam"
 	shell:
-		"lima --isoseq --different --min-passes 1 --split-bam-named --dump-clips --dump-removed -j 0 {input.file} {primers} {output}"
+		"lima --isoseq --different --min-passes 1 --split-bam-named --dump-clips --dump-removed -j 0 {input} {primers} {output}"
 
 # trimming of polya tails and removal of concatemers
 rule isoseq_refine:
@@ -68,12 +71,14 @@ rule isoseq_refine:
 rule isoseq_cluster:
 	input:
 		 "{sample}/isoseq3-refine/{sample}.flnc.bam"
+	params:
+		fasta_gz =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta.gz"
 	output:
-		bam =  "{sample}/isoseq3-cluster/{sample}.polished.bam",
-		fastq =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta.gz",
+		fasta =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
 		report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	shell:
-		"isoseq3 cluster --verbose --use-qvs -j 0 {input} {output.bam}"
+		"isoseq3 cluster --verbose --use-qvs -j 0 {input} {output.bam};"
+		"gunzip {params.fasta_gz}"
 
 rule minimapIndex:
 	input: referenceFa + ".fa"
@@ -82,7 +87,7 @@ rule minimapIndex:
 		"minimap2 -d {output} {input}" 
 rule minimap:
 	input: 
-		fastq =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta.gz",
+		fastq =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
 		ref = referenceFa + ".fa",
 		index = referenceFa + ".mmi"
 	params: 
@@ -93,7 +98,7 @@ rule minimap:
 		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam"
 	shell:
 		"minimap2 {params} {input.index} {input.fastq} > {output.sam};"
-		"sort -k 3,3 -k 4,4n {output.sam} > {output.sorted_sam}"
+		"sort -k 3,3 -k 4,4n {output.sam} > {output.sam_sorted}"
 rule samtools:
 	input:  "{sample}/minimap/{sample}.hq.sam"
 	output:
@@ -109,19 +114,19 @@ rule samtools:
 
 rule cupcake_collapse:
 	input:
-		fastq =   "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta.gz"
-		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam"
+		fasta =   "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
+		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
 		cluster_report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	output:
 		 "{sample}/cupcake/{sample}.hq.collapsed.gff",
-		 "{sample}/cupcake/{sample}.hq.collapsed.rep.fq",
+		 "{sample}/cupcake/{sample}.hq.collapsed.rep.fa",
 		 "{sample}/cupcake/{sample}.hq.collapsed.group.txt",
 		 "{sample}/cupcake/{sample}.hq.collapsed.read_stat.txt",
 		 "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt"
 	params:
-		prefix = "{sample}.hq"
+		prefix = "{sample}/cupcake/{sample}.hq"
 	shell:
-		"collapse_isoforms_by_sam.py --input {input.fastq} --fq "
+		"collapse_isoforms_by_sam.py --input {input.fasta} "
    		"-s {input.sam_sorted} --dun-merge-5-shorter -o {params.prefix};"
 		"get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report}"
 
@@ -154,24 +159,32 @@ rule multiQC:
 	shell:
 		"export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
 		"multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 
-
 rule SQANTI:
 	input:
-		fastq = "{sample}/cupcake/{sample}.hq.collapsed.rep.fq"
+		#fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
+		gff = "{sample}/cupcake/{sample}.hq.collapsed.gff"
 	output:
-		report = fastqFolder + "{sample}.classification.txt"
+		report = "{sample}/SQANTI2/{sample}_classification.txt"
 	params:
-		#python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+		sample = "{sample}",
+		outDir = "{sample}/SQANTI2/",
+		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
 		sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
 		nCores = 4,
+		abundance = "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt",
 		gtf = referenceGTF,
 		genome = referenceFa + ".fa",
-		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified.gz",
-		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed.gz",
+		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed",
 		polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
 	shell:
-	`	"ml R/3.6.0; "
+		#"export PATH=/sc/orga/projects/ad-omics/data/software/UCSC/:$PATH;"
+		#"module unload gcc;ml R/3.6.0; "
 		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
-		"python {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
+		"{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
+		" --dir {params.outDir} "
+		" --out {params.sample} "
 		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
-		" {input.fastq} {params.gtf} {params.genome} "
+		" --fl_count {params.abundance}"
+		" --gtf {input.gff} " 
+		" {params.gtf} {params.genome} "

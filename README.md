@@ -42,27 +42,20 @@ chmod +x scripts/gtfToGenePred
 echo "export PATH="$PWD/scripts/:\$PATH >> ~/.bashrc"
 ```
 
-## Symlink reference files
-
-```
-mkdir reference
-# if you want hg19:
-ln -s /hpc/users/humphj04/GENCODE/gencode.v30lift37.annotation.gtf reference/gencode.v30lift37.annotation.gtf
-ln -s /sc/orga/projects/ad-omics/ricardo/Data/1000G_phase1/human_g1k_v37.fasta reference/human_g1k_v37.fa
-
-# hg38 - SQANTI only supports this
-ln -s /sc/orga/projects/ad-omics/data/references/hg38_reference/hg38.fa reference/hg38.fa
-cp /sc/orga/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf.gz reference/gencode.v30.annotation.gtf.gz
-gunzip reference/gencode.v30.annotation.gtf.gz
-```
-
 ## Running on test data
 
 ```
-snakemake --configfile config-files/test_config.yaml
+mv test/test_config.yaml .
+mv test/test_samples.tsv .
+snakemake --configfile test_config.yaml -npr
 ```
 
+
+
+
 ## Outline of pipeline
+
+Alignment
 
 1. Align reads to reference genome using minimap2
 
@@ -72,9 +65,13 @@ snakemake --configfile config-files/test_config.yaml
 
 3. Pool QC metrics together with multiQC
 
-Future:
+Transcript assembly/collapse
 
-* Collapse reads with TAMA / SQUANTI2 / CupCake
+* Collapse reads with TAMA and CupCake
+
+* Assemble reads with Stringtie2 and Scallop-LR
+
+* Inspect each run with SQANTI2
 
 * Infer transcript function with IsoAnnot - unreleased yet
 

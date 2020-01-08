@@ -1,0 +1,15 @@
+dataCode:
+        "test_hg38_minimap"
+minimapParams:
+        " -ax splice -uf -C5 "
+metadata:
+       "test_samples.tsv" 
+referenceFa:
+        # omit the .fa
+        "/sc/orga/projects/ad-omics/data/references/hg38_reference/hg38"
+referenceGTF:
+        "/sc/orga/projects/ad-omics/data/references//hg38_reference/GENCODE/gencode.v30.annotation.gtf"
+rawFolder:
+        ""
+outFolder:
+        ""

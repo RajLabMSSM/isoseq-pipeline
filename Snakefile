@@ -17,7 +17,7 @@ primers = "reference/NEB_primers_01_2019.fa"
 
 rule all:
 	input:
-		expand( "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt", sample = samples),
+	#	expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 		expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
 		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
 		expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
@@ -121,17 +121,17 @@ rule cupcake_collapse:
 		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
 		cluster_report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	output:
-		 "{sample}/cupcake/{sample}.cupcake.gff",
-		 "{sample}/cupcake/{sample}.cupcake.rep.fa",
-		 "{sample}/cupcake/{sample}.cupcake.group.txt",
-		 "{sample}/cupcake/{sample}.cupcake.read_stat.txt",
-		 "{sample}/cupcake/{sample}.cupcake.abundance.txt"
+		 "{sample}/cupcake/{sample}.cupcake.collapsed.gff",
+		 "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
+		 "{sample}/cupcake/{sample}.cupcake.collapsed.group.txt",
+		 "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
+		 "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt"
 	params:
-		prefix = "{sample}/cupcake/{sample}"
+		prefix = "{sample}/cupcake/{sample}.cupcake"
 	shell:
 		"collapse_isoforms_by_sam.py --input {input.fasta} "
    		"-s {input.sam_sorted} --dun-merge-5-shorter -o {params.prefix};"
-		"get_abundance_post_collapse.py {params.prefix}.cupcake {input.cluster_report}"
+		"get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report}"
 
 # assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
 rule stringtie:
@@ -141,8 +141,8 @@ rule stringtie:
 		gtf = referenceGTF,
 		stringtiePath = "/sc/orga/projects/ad-omics/data/software/stringtie"
 	output:
-		gtf = "{sample}/stringtie/{sample}.stringtie.gtf",
-		gff = "{sample}/stringtie/{sample}.stringtie.gff"
+		gtf = "{sample}/stringtie/{sample}.stringtie.collapsed.gtf",
+		gff = "{sample}/stringtie/{sample}.stringtie.collapsed.gff"
 	shell:
 		"{params.stringtiePath}/stringtie -G {params.gtf} -L -o {output.gtf} {input.bam};"
 		"gffread -E {output.gtf} -o {output.gff}"
@@ -180,11 +180,11 @@ rule multiQC:
 rule SQANTI:
 	input:
 		#fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
-		gff = "{sample}/{method}/{sample}.{method}.gff"
+		gff = "{sample}/{method}/{sample}.{method}.collapsed.gff"
 	output:
 		report = "{sample}/SQANTI2/{sample}.{method}_classification.txt"
 	params:
-		sample = "{sample}",
+		sample = "{sample}.{method}",
 		outDir = "{sample}/SQANTI2/",
 		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
 		sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",

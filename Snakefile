@@ -18,8 +18,9 @@ primers = "reference/NEB_primers_01_2019.fa"
 rule all:
 	input:
 		expand( "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt", sample = samples),
-		expand( "{sample}/SQANTI2/filtered/{sample}_filtered.txt", sample = samples),
-		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples)
+		expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
+		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
+		expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
 	#	expand(fastqFolder + "{sample}.classification.txt", sample = samples),
 		# "multiqc/multiqc_report.html",
 		#expand( "rnaseqc/{samp}.metrics.tsv", samp = samples),
@@ -113,23 +114,39 @@ rule samtools:
                 "samtools flagstat {output.bam} > {output.flagstat};"
                 "samtools idxstats {output.bam} > {output.idxstat} "
 
+# collapse redundant reads
 rule cupcake_collapse:
 	input:
 		fasta =   "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
 		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
 		cluster_report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	output:
-		 "{sample}/cupcake/{sample}.hq.collapsed.gff",
-		 "{sample}/cupcake/{sample}.hq.collapsed.rep.fa",
-		 "{sample}/cupcake/{sample}.hq.collapsed.group.txt",
-		 "{sample}/cupcake/{sample}.hq.collapsed.read_stat.txt",
-		 "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt"
+		 "{sample}/cupcake/{sample}.cupcake.gff",
+		 "{sample}/cupcake/{sample}.cupcake.rep.fa",
+		 "{sample}/cupcake/{sample}.cupcake.group.txt",
+		 "{sample}/cupcake/{sample}.cupcake.read_stat.txt",
+		 "{sample}/cupcake/{sample}.cupcake.abundance.txt"
 	params:
-		prefix = "{sample}/cupcake/{sample}.hq"
+		prefix = "{sample}/cupcake/{sample}"
 	shell:
 		"collapse_isoforms_by_sam.py --input {input.fasta} "
    		"-s {input.sam_sorted} --dun-merge-5-shorter -o {params.prefix};"
-		"get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report}"
+		"get_abundance_post_collapse.py {params.prefix}.cupcake {input.cluster_report}"
+
+# assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
+rule stringtie:
+	input:
+		bam =  "{sample}/minimap/{sample}_sorted.bam"
+	params:
+		gtf = referenceGTF,
+		stringtiePath = "/sc/orga/projects/ad-omics/data/software/stringtie"
+	output:
+		gtf = "{sample}/stringtie/{sample}.stringtie.gtf",
+		gff = "{sample}/stringtie/{sample}.stringtie.gff"
+	shell:
+		"{params.stringtiePath}/stringtie -G {params.gtf} -L -o {output.gtf} {input.bam};"
+		"gffread -E {output.gtf} -o {output.gff}"
+ 
 
 rule collapseAnnotation:
 	input: referenceGTF 
@@ -163,16 +180,16 @@ rule multiQC:
 rule SQANTI:
 	input:
 		#fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
-		gff = "{sample}/cupcake/{sample}.hq.collapsed.gff"
+		gff = "{sample}/{method}/{sample}.{method}.gff"
 	output:
-		report = "{sample}/SQANTI2/{sample}_classification.txt"
+		report = "{sample}/SQANTI2/{sample}.{method}_classification.txt"
 	params:
 		sample = "{sample}",
 		outDir = "{sample}/SQANTI2/",
 		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
 		sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
 		nCores = 4,
-		abundance = "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt",
+		#abundance = "{sample}/cupcake/{sample}.{method}.abundance.txt",
 		gtf = referenceGTF,
 		genome = referenceFa + ".fa",
 		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
@@ -186,19 +203,20 @@ rule SQANTI:
 		" --dir {params.outDir} "
 		" --out {params.sample} "
 		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
-		" --fl_count {params.abundance}"
+		#" --fl_count {params.abundance}"
 		" --gtf {input.gff} " 
 		" {params.gtf} {params.genome} "
 
+# sqanti filter - only works with Cupcake output for now
 rule SQUANTI_filter:
 	input:
-		classification = "{sample}/SQANTI2/{sample}_classification.txt",
-		fasta = "{sample}/SQANTI2/{sample}.hq.collapsed_corrected.fasta",
+		classification = "{sample}/SQANTI2/{sample}.{method}_classification.txt",
+		fasta = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.fasta",
 		#sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-		gtf = "{sample}/SQANTI2/{sample}.hq.collapsed_corrected.gtf",
-		faa = "{sample}/SQANTI2/{sample}.hq.collapsed_corrected.faa"
+		gtf = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.gtf",
+		faa = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.faa"
 	output:
-		"{sample}/SQANTI2/filtered/{sample}_filtered.txt"
+		"{sample}/SQANTI2/{sample}_classification.filtered_lite_classification.txt"
 	params:
 		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
                 sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
@@ -207,6 +225,4 @@ rule SQUANTI_filter:
 		" --faa {input.faa} " #--sam {input.sam} "
 		" {input.classification} {input.fasta} {input.gtf} " 	
 
-# assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
-rule stringtie:
 

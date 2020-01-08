@@ -18,7 +18,8 @@ primers = "reference/NEB_primers_01_2019.fa"
 rule all:
 	input:
 		expand( "{sample}/cupcake/{sample}.hq.collapsed.abundance.txt", sample = samples),
-		expand( "{sample}/SQANTI2/{sample}_classification.txt", sample = samples)
+		expand( "{sample}/SQANTI2/filtered/{sample}_filtered.txt", sample = samples),
+		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples)
 	#	expand(fastqFolder + "{sample}.classification.txt", sample = samples),
 		# "multiqc/multiqc_report.html",
 		#expand( "rnaseqc/{samp}.metrics.tsv", samp = samples),
@@ -67,17 +68,17 @@ rule isoseq_refine:
 		 "{sample}/isoseq3-refine/{sample}.flnc.bam"
 	shell:
 		"isoseq3 refine --require-polya {input} {primers} {output}"
-
+# polish
 rule isoseq_cluster:
 	input:
-		 "{sample}/isoseq3-refine/{sample}.flnc.bam"
+		"{sample}/isoseq3-refine/{sample}.flnc.bam"
 	params:
 		fasta_gz =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta.gz"
 	output:
 		fasta =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
 		report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	shell:
-		"isoseq3 cluster --verbose --use-qvs -j 0 {input} {output.bam};"
+		"isoseq3 cluster --verbose --use-qvs -j 0 {input} {output.fasta};"
 		"gunzip {params.fasta_gz}"
 
 rule minimapIndex:
@@ -91,7 +92,7 @@ rule minimap:
 		ref = referenceFa + ".fa",
 		index = referenceFa + ".mmi"
 	params: 
-		"-ax splice -t 30 -uf --secondary=no -C5"
+		"-ax splice -t 4 -uf --secondary=no -C5"
 		#config['minimapParams']
 	output: 
 		sam =  "{sample}/minimap/{sample}.hq.sam",
@@ -102,13 +103,13 @@ rule minimap:
 rule samtools:
 	input:  "{sample}/minimap/{sample}.hq.sam"
 	output:
-		bam =  "{sample}/minimap/{samples}_sorted.bam",
-		bai =  "{sample}/minimap/{samples}_sorted.bam.bai",
-		flagstat =  "{sample}/qc/{samples}.flagstat.txt",
-                idxstat =  "{sample}/qc/{samples}.idxstat.txt"
+		bam =  "{sample}/minimap/{sample}_sorted.bam",
+		bai =  "{sample}/minimap/{sample}_sorted.bam.bai",
+		flagstat =  "{sample}/qc/{sample}.flagstat.txt",
+                idxstat =  "{sample}/qc/{sample}.idxstat.txt"
 	shell:
 		"samtools view -bh {input} | samtools sort > {output.bam}; "
-		"samtools index {output.bam}"
+		"samtools index {output.bam};"
                 "samtools flagstat {output.bam} > {output.flagstat};"
                 "samtools idxstats {output.bam} > {output.idxstat} "
 
@@ -132,22 +133,22 @@ rule cupcake_collapse:
 
 rule collapseAnnotation:
 	input: referenceGTF 
-	output: referenceGTF + ".genes.gtf"
+	output: referenceGTF + ".genes"
 	params: script = "scripts/collapse_annotation.py"
 	shell: "/sc/orga/work/humphj04/conda/envs/isoseq-pipeline/bin/python {params.script} {input} {output}"
 
 rule rnaseqc:
 	input:
-		geneGTF = referenceGTF + ".genes.gtf",
-		bam =  "sorted/{samples}_sorted.bam"
+		geneGTF = referenceGTF + ".genes",
+		bam =  "{sample}/minimap/{sample}_sorted.bam"
 	params:
 		out =  "{sample}/qc/"
 	output:
-		 "{sample}/qc/{samples}.metrics.tsv"
+		 "{sample}/qc/{sample}.metrics.tsv"
 	shell:
 		"ml rnaseqc;"
 		"rnaseqc {input.geneGTF} {input.bam} {params.out} "
-		" --sample={wildcards.samples} "
+		" --sample={wildcards.sample} "
 		" --unpaired --coverage --verbose --mapping-quality 0 --base-mismatch=1000 --detection-threshold=1"
 rule multiQC:
 	input:
@@ -188,3 +189,24 @@ rule SQANTI:
 		" --fl_count {params.abundance}"
 		" --gtf {input.gff} " 
 		" {params.gtf} {params.genome} "
+
+rule SQUANTI_filter:
+	input:
+		classification = "{sample}/SQANTI2/{sample}_classification.txt",
+		fasta = "{sample}/SQANTI2/{sample}.hq.collapsed_corrected.fasta",
+		#sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
+		gtf = "{sample}/SQANTI2/{sample}.hq.collapsed_corrected.gtf",
+		faa = "{sample}/SQANTI2/{sample}.hq.collapsed_corrected.faa"
+	output:
+		"{sample}/SQANTI2/filtered/{sample}_filtered.txt"
+	params:
+		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+                sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
+	shell:
+		"{params.python} {params.sqantiPath}/sqanti_filter2.py "
+		" --faa {input.faa} " #--sam {input.sam} "
+		" {input.classification} {input.fasta} {input.gtf} " 	
+
+# assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
+rule stringtie:
+

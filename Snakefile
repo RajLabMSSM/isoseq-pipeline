@@ -116,27 +116,34 @@ rule samtools:
                 "samtools idxstats {output.bam} > {output.idxstat} "
 
 # collapse redundant reads
+# deal with 5' truncated reads
+# filter away	
 rule cupcake_collapse:
 	input:
 		fasta =   "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
 		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
 		cluster_report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	output:
-		 gff = "{sample}/cupcake/{sample}.cupcake.collapsed.gff",
+		 
+		 gff = "{sample}/cupcake/{sample}.cupcake.collapsed.filtered.gff",
 		 fasta = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
 		 group = "{sample}/cupcake/{sample}.cupcake.collapsed.group.txt",
 		 stat = "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
-		 count = "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt",
+		 count = "{sample}/cupcake/{sample}.cupcake.collapsed.filtered.abundance.txt",
 		 chain_gff = "{sample}/cupcake/chain/cupcake.collapsed.gff",
                  chain_group = "{sample}/cupcake/chain/cupcake.collapsed.group.txt",
                  chain_count = "{sample}/cupcake/chain/cupcake.collapsed.abundance.txt"	
 
 	params:
-		prefix = "{sample}/cupcake/{sample}.cupcake"
+		prefix = "{sample}/cupcake/{sample}.cupcake",
+		prefix_collapsed = "{sample}/cupcake/{sample}.cupcake.collapsed"
 	shell:
 		"collapse_isoforms_by_sam.py --input {input.fasta} "
    		"-s {input.sam_sorted} --dun-merge-5-shorter -o {params.prefix};"
-		"get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report};"
+		# filter 5' truncated transcripts
+		"filter_away_subset.py {params.prefix}.collapsed ; "
+		# get abundance counts
+		"get_abundance_post_collapse.py {params.prefix}.collapsed.filtered {input.cluster_report};"
 		# copy files to chain directory - omit sample name from file name
 		"cp {output.gff} {output.chain_gff};"
 		"cp {output.group} {output.chain_group};"

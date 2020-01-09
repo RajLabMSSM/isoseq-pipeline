@@ -45,6 +45,8 @@ echo "export PATH="$PWD/scripts/:\$PATH >> ~/.bashrc"
 ## Running on test data
 
 ```
+conda activate isoseq-pipeline
+ml R/3.6.0
 mv test/test_config.yaml .
 mv test/test_samples.tsv .
 snakemake --configfile test_config.yaml -npr

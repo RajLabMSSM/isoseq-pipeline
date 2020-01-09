@@ -1,7 +1,7 @@
 __default__:
   #partition: chimera
-  queue: acc_als-omics
-  cores: 1
+  queue: express
+  cores: 8
   mem: 3750
   time: '60'
   name: $(basename $(pwd)):{rule}:{wildcards}

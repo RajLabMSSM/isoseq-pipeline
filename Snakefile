@@ -1,4 +1,4 @@
-
+shell.prefix('export PS1="";source activate isoseq-pipeline;ml R/3.6.0;')
 import pandas as pd
 
 metadata = config['metadata']
@@ -18,9 +18,10 @@ primers = "reference/NEB_primers_01_2019.fa"
 rule all:
 	input:
 	#	expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
-		expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
+#		expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
 		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
-		expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
+		"all_samples/SQANTI2/all_samples_classification.txt"	
+#	expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
 	#	expand(fastqFolder + "{sample}.classification.txt", sample = samples),
 		# "multiqc/multiqc_report.html",
 		#expand( "rnaseqc/{samp}.metrics.tsv", samp = samples),
@@ -121,19 +122,132 @@ rule cupcake_collapse:
 		sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
 		cluster_report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
 	output:
-		 "{sample}/cupcake/{sample}.cupcake.collapsed.gff",
-		 "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
-		 "{sample}/cupcake/{sample}.cupcake.collapsed.group.txt",
-		 "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
-		 "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt"
+		 gff = "{sample}/cupcake/{sample}.cupcake.collapsed.gff",
+		 fasta = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
+		 group = "{sample}/cupcake/{sample}.cupcake.collapsed.group.txt",
+		 stat = "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
+		 count = "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt",
+		 chain_gff = "{sample}/cupcake/chain/cupcake.collapsed.gff",
+                 chain_group = "{sample}/cupcake/chain/cupcake.collapsed.group.txt",
+                 chain_count = "{sample}/cupcake/chain/cupcake.collapsed.abundance.txt"	
+
 	params:
 		prefix = "{sample}/cupcake/{sample}.cupcake"
 	shell:
 		"collapse_isoforms_by_sam.py --input {input.fasta} "
    		"-s {input.sam_sorted} --dun-merge-5-shorter -o {params.prefix};"
-		"get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report}"
+		"get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report};"
+		# copy files to chain directory - omit sample name from file name
+		"cp {output.gff} {output.chain_gff};"
+		"cp {output.group} {output.chain_group};"
+		"cp {output.count} {output.chain_count}"
 
+chainFileRows = ["GROUP_FILENAME=cupcake.collapsed.group.txt", "COUNT_FILENAME=cupcake.collapsed.abundance.txt", "GFF_FILENAME=cupcake.collapsed.gff"]
+
+rule create_chain_config:
+	output:
+		config = "chain.config.txt"
+	run:
+		chainSampleRows = []
+		for i in samples:
+			l = "SAMPLE=" + i + ";" + i + "/cupcake/chain/"
+			chainSampleRows.append(l)
+		allRows = chainSampleRows + [""] + chainFileRows	
+		
+		with open(output.config, 'w') as filehandle:
+    			for listitem in allRows:
+        			filehandle.write('%s\n' % listitem)
+
+rule SQANTI:
+	input:
+		#fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
+		gff = "{sample}/{method}/{sample}.{method}.collapsed.gff"
+	output:
+		report = "{sample}/SQANTI2/{sample}.{method}_classification.txt"
+	params:
+		sample = "{sample}.{method}",
+		outDir = "{sample}/SQANTI2/",
+		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+		sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
+		nCores = 12,
+		#abundance = "{sample}/cupcake/{sample}.{method}.abundance.txt",
+		gtf = referenceGTF,
+		genome = referenceFa + ".fa",
+		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed",
+		polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
+	shell:
+		#"export PATH=/sc/orga/projects/ad-omics/data/software/UCSC/:$PATH;"
+		#"module unload gcc;ml R/3.6.0; "
+		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
+		"{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
+		" --dir {params.outDir} "
+		" --out {params.sample} "
+		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
+		#" --fl_count {params.abundance}"
+		" --gtf {input.gff} " 
+		" {params.gtf} {params.genome} "
+
+rule SQANTI_all:
+	input:
+		gff = "all_samples/all_samples.chained.gff"
+	output:
+		report = "all_samples/SQANTI2/all_samples_classification.txt"
+	params:
+                sample = "all_samples.chained",
+                outDir = "all_samples/SQANTI2/",
+                python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+                sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
+                nCores = 12,
+                #abundance = "{sample}/cupcake/{sample}.{method}.abundance.txt",
+                gtf = referenceGTF,
+                genome = referenceFa + ".fa",
+                intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+                cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed",
+                polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
+	shell:
+		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
+                "{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
+                " --dir {params.outDir} "
+                " --out {params.sample} "
+                " --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
+                #" --fl_count {params.abundance}"
+                " --gtf {input.gff} "
+                " {params.gtf} {params.genome} "
+
+
+# sqanti filter - only works with Cupcake output for now
+rule SQUANTI_filter:
+	input:
+		classification = "{sample}/SQANTI2/{sample}.{method}_classification.txt",
+		fasta = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.fasta",
+		#sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
+		gtf = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.gtf",
+		faa = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.faa"
+	output:
+		"{sample}/SQANTI2/{sample}_classification.filtered_lite_classification.txt"
+	params:
+		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+                sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
+	shell:
+		"{params.python} {params.sqantiPath}/sqanti_filter2.py "
+		" --faa {input.faa} " #--sam {input.sam} "
+		" {input.classification} {input.fasta} {input.gtf} " 	
+
+
+rule chain_samples:
+	input:
+		chain_gff = expand("{sample}/cupcake/chain/cupcake.collapsed.gff", sample = samples),
+		chain_config = "chain.config.txt"
+	output:
+		gff = "all_samples/all_samples.chained.gff"
+	shell:
+		"chain_samples.py {input.chain_config}; "
+		"if [ ! -d all_samples/ ]; then mkdir all_samples; fi ;"
+		"mv all_samples.chained* all_samples/;"
+		"rm tmp* "
 # assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
+# some monoexon transcripts are given strand of "." - remove them in bioawk
 rule stringtie:
 	input:
 		bam =  "{sample}/minimap/{sample}_sorted.bam"
@@ -144,8 +258,9 @@ rule stringtie:
 		gtf = "{sample}/stringtie/{sample}.stringtie.collapsed.gtf",
 		gff = "{sample}/stringtie/{sample}.stringtie.collapsed.gff"
 	shell:
-		"{params.stringtiePath}/stringtie -G {params.gtf} -L -o {output.gtf} {input.bam};"
-		"gffread -E {output.gtf} -o {output.gff}"
+		"ml bioawk; "
+		"{params.stringtiePath}/stringtie --rf -G {params.gtf} -L -o {output.gtf} {input.bam};"
+		"gffread -E {output.gtf} -o- | awk \'$7 != \".\"\' > {output.gff}"
  
 
 rule collapseAnnotation:
@@ -177,52 +292,4 @@ rule multiQC:
 	shell:
 		"export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
 		"multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 
-rule SQANTI:
-	input:
-		#fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
-		gff = "{sample}/{method}/{sample}.{method}.collapsed.gff"
-	output:
-		report = "{sample}/SQANTI2/{sample}.{method}_classification.txt"
-	params:
-		sample = "{sample}.{method}",
-		outDir = "{sample}/SQANTI2/",
-		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-		sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
-		nCores = 4,
-		#abundance = "{sample}/cupcake/{sample}.{method}.abundance.txt",
-		gtf = referenceGTF,
-		genome = referenceFa + ".fa",
-		intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
-		cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed",
-		polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
-	shell:
-		#"export PATH=/sc/orga/projects/ad-omics/data/software/UCSC/:$PATH;"
-		#"module unload gcc;ml R/3.6.0; "
-		"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
-		"{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
-		" --dir {params.outDir} "
-		" --out {params.sample} "
-		" --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
-		#" --fl_count {params.abundance}"
-		" --gtf {input.gff} " 
-		" {params.gtf} {params.genome} "
-
-# sqanti filter - only works with Cupcake output for now
-rule SQUANTI_filter:
-	input:
-		classification = "{sample}/SQANTI2/{sample}.{method}_classification.txt",
-		fasta = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.fasta",
-		#sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-		gtf = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.gtf",
-		faa = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.faa"
-	output:
-		"{sample}/SQANTI2/{sample}_classification.filtered_lite_classification.txt"
-	params:
-		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-                sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
-	shell:
-		"{params.python} {params.sqantiPath}/sqanti_filter2.py "
-		" --faa {input.faa} " #--sam {input.sam} "
-		" {input.classification} {input.fasta} {input.gtf} " 	
-
 

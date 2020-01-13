@@ -25,8 +25,10 @@ rule all:
 	#	expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #		expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
 		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
-		"all_samples/SQANTI2/all_samples.chained_classification.txt"	
+		"all_samples/SQANTI2/all_samples.chained_classification.txt",
 #	expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
+		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite_classification.txt",
+		"all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
 	#	expand(fastqFolder + "{sample}.classification.txt", sample = samples),
 		# "multiqc/multiqc_report.html",
 		#expand( "rnaseqc/{samp}.metrics.tsv", samp = samples),
@@ -264,6 +266,7 @@ rule SQANTI_all:
                 " --out {params.sample} "
 		" -c {params.junctions} "
                 " --cage_peak {params.cage} --polyA_motif_list {params.polya} " 
+		"--skipORF " # skipping ORF finding for now as it's very slow
 		#"-c {params.intropolis}"
                 " --fl_count {params.abundance}"
                 " --gtf {input.gff} "
@@ -274,8 +277,8 @@ rule SQUANTI_all_filter:
 		classification = "all_samples/SQANTI2/all_samples.chained_classification.txt",
 		fasta = "all_samples/SQANTI2/all_samples.chained_corrected.fasta",
 		#sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-		gtf = "all_samples/SQANTI2/all_samples.chained_corrected.gtf",
-		faa = "all_samples/SQANTI2/all_samples.chained_corrected.faa"
+		gtf = "all_samples/SQANTI2/all_samples.chained_corrected.gtf"
+		#faa = "all_samples/SQANTI2/all_samples.chained_corrected.faa"
 	output:
 		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite_classification.txt"
 	params:
@@ -283,7 +286,7 @@ rule SQUANTI_all_filter:
                 sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
 	shell:
 		"{params.python} {params.sqantiPath}/sqanti_filter2.py "
-		" --faa {input.faa} " #--sam {input.sam} "
+		#" --faa {input.faa} " #--sam {input.sam} "
 		" {input.classification} {input.fasta} {input.gtf} " 	
 
 
@@ -334,4 +337,18 @@ rule multiQC:
 	shell:
 		"export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
 		"multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 
+
+# sort and tabix index final GFF
+rule indexGFF:
+        input:
+                "all_samples/SQANTI2/all_samples.chained_classification.filtered.gff"
+        output:
+                gff = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz"
+                index = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
+        params:
+                gff3sort = "/sc/orga/projects/ad-omics/data/references//../software/gff3sort/gff3sort.pl"
+        shell:
+                "{params.gff3sort} {input} | bgzip > {output.gff};"
+                "ml tabix;"
+                "tabix {output.gff} "
 

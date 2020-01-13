@@ -280,7 +280,8 @@ rule SQUANTI_all_filter:
 		gtf = "all_samples/SQANTI2/all_samples.chained_corrected.gtf"
 		#faa = "all_samples/SQANTI2/all_samples.chained_corrected.faa"
 	output:
-		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite_classification.txt"
+		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite_classification.txt",
+		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite.gtf"
 	params:
 		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
                 sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
@@ -341,9 +342,9 @@ rule multiQC:
 # sort and tabix index final GFF
 rule indexGFF:
         input:
-                "all_samples/SQANTI2/all_samples.chained_classification.filtered.gff"
+                "all_samples/SQANTI2/all_samples.chained_classification.filtered_lite.gtf"
         output:
-                gff = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz"
+                gff = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz",
                 index = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
         params:
                 gff3sort = "/sc/orga/projects/ad-omics/data/references//../software/gff3sort/gff3sort.pl"

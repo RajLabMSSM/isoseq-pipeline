@@ -27,8 +27,8 @@ rule all:
 		expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
 		"all_samples/SQANTI2/all_samples.chained_classification.txt",
 #	expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
-		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite_classification.txt",
-		"all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
+		"all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
+		"all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
 	#	expand(fastqFolder + "{sample}.classification.txt", sample = samples),
 		# "multiqc/multiqc_report.html",
 		#expand( "rnaseqc/{samp}.metrics.tsv", samp = samples),
@@ -280,15 +280,16 @@ rule SQUANTI_all_filter:
 		gtf = "all_samples/SQANTI2/all_samples.chained_corrected.gtf"
 		#faa = "all_samples/SQANTI2/all_samples.chained_corrected.faa"
 	output:
-		"all_samples/SQANTI2/all_samples.chained_classification.filtered_lite_classification.txt"
+		"all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
+		"all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite.gtf"
 	params:
 		python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
                 sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
 	shell:
 		"{params.python} {params.sqantiPath}/sqanti_filter2.py "
 		#" --faa {input.faa} " #--sam {input.sam} "
-		" {input.classification} {input.fasta} {input.gtf} " 	
-
+		" {input.classification} {input.fasta} {input.gtf} ;" 	
+		" mv *png all_samples/SQANTI_filtered/"
 
 
 # assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
@@ -341,10 +342,10 @@ rule multiQC:
 # sort and tabix index final GFF
 rule indexGFF:
         input:
-                "all_samples/SQANTI2/all_samples.chained_classification.filtered.gff"
+                "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite.gtf"
         output:
-                gff = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz"
-                index = "all_samples/SQANTI2/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
+                gff = "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered.sorted.gff.gz",
+                index = "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
         params:
                 gff3sort = "/sc/orga/projects/ad-omics/data/references//../software/gff3sort/gff3sort.pl"
         shell:

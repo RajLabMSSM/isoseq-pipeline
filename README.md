@@ -17,7 +17,7 @@
 ## Conda recipe
 
 ```
-conda create -c bioconda -n isoseq-pipeline python=3.7 snakemake samtools=1.9 minimap2
+conda create -c bioconda -c conda-forge -n isoseq-pipeline python=3.7 snakemake samtools=1.9 minimap2
 conda install -n isoseq-pipeline psutil biopython
 conda install -n isoseq-pipeline -c bioconda isoseq3=3.2 pbccs=4.0
 conda install -n isoseq-pipeline -c bioconda bcbiogff gffread lima pbcoretools bamtools pysam ucsc-gtftogenepred openssl=1.0 pbbam

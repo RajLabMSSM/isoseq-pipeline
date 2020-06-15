@@ -1,12 +1,20 @@
 __default__:
   #partition: chimera
   queue: express
-  cores: 8
-  mem: 3750
+  cores: 4
+  mem: 3000
   time: '60'
   name: $(basename $(pwd)):{rule}:{wildcards}
   output: logs/{rule}:{wildcards}.stdout
   error: logs/{rule}:{wildcards}.stderr
+chain_samples:
+    time: '60'
+    mem: 3000
+    cores: 12
+SQANTI_all:
+    time: 180
+    mem: 3200
+    cores: 32
 # extractJunctions:
 #   time: '120:00'
 #   cores: 1

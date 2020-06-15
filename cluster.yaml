@@ -11,6 +11,8 @@ __default__:
 #   time: '120:00'
 #   cores: 1
 #   mem: 3750
+TAMA_collapse:
+    time: 120
 CCS:
    time: 72:00
    queue: 'long'

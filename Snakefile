@@ -24,6 +24,7 @@ junctionArgs = " ".join(["-c " + f for f in junctions])
 
 rule all:
     input:
+        "TAMA_merge/tama_merge_config.txt",
         expand("{sample}/TAMA/{sample}.bed", sample = samples), 
     #   expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #       expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
@@ -142,6 +143,21 @@ rule TAMA_collapse:
         'conda activate py2bio;'
         'python {params.script} -s {input.sam_sorted} -f {input.genome} -p {wildcards.sample}/TAMA/{wildcards.sample} -x no_cap'
 
+#annotation_capped.bed        capped  1,1,1   caplib
+#annotation_nocap.bed        no_cap  2,1,1   nocaplib
+
+rule create_TAMA_merge_config:
+    output:
+        config = "TAMA_merge/tama_merge_config.txt"
+    run:
+        tamaMergeRows = []
+        for s in samples:
+            entry = s + "/TAMA/" + s + ".bed\tno_cap\t1,1,1\t" + s
+            tamaMergeRows.append(entry)
+
+        with open(output.config, 'w') as filehandle:
+                for listitem in tamaMergeRows:
+                    filehandle.write('%s\n' % listitem)
 
 
 ## Cupcake Tools

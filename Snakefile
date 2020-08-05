@@ -26,6 +26,7 @@ localrules: create_chain_config
 
 rule all:
     input:
+       "TAMA_merge/tama_merge_config.txt",
        expand("{sample}/TAMA/{sample}.bed", sample = samples), 
     #   expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #       expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
@@ -140,6 +141,21 @@ rule TAMA_collapse:
         'python {params.script} -s {input.sam_sorted} -f {input.genome} -p {wildcards.sample}/TAMA/{wildcards.sample} -x no_cap'
 
 
+rule create_TAMA_merge_config:
+    output:
+        config = "TAMA_merge/tama_merge_config.txt"
+    run:
+        tamaMergeRows = []
+        for s in samples:
+            entry = s + "/TAMA/" + s + ".bed\tno_cap\t1,1,1\t" + s
+            tamaMergeRows.append(entry)
+
+        with open(output.config, 'w') as filehandle:
+                for listitem in tamaMergeRows:
+                    filehandle.write('%s\n' % listitem)
+
+
+
 
 ## Cupcake Tools
 
@@ -200,18 +216,6 @@ rule create_chain_config:
                 for listitem in allRows:
                     filehandle.write('%s\n' % listitem)
 
-rule chain_samples:
-    input:
-        chain_gff = expand("{sample}/cupcake/chain/cupcake.collapsed.filtered.gff", sample = samples),
-        chain_config = "chain.config.txt"
-    output:
-        gff = "all_samples/all_samples.chained.gff"
-    shell:
-        "chain_samples.py {input.chain_config} count_fl; "
-        "if [ ! -d all_samples/ ]; then mkdir all_samples; fi ;"
-        "mv all_samples.chained* all_samples/;"
-        "rm tmp* "
-
 
 #### SQANTI
 
@@ -264,7 +268,6 @@ rule SQUANTI_filter:
         "{params.python} {params.sqantiPath}/sqanti_filter2.py "
         " --faa {input.faa} " #--sam {input.sam} "
         " {input.classification} {input.fasta} {input.gtf} "    
->>>>>>> 724c83ca2af8b9f9b8b3d76c112da74519be1560
 
 rule chain_samples:
     input:
@@ -302,7 +305,6 @@ rule SQANTI_all:
         nChunks = 16,
         python = "/sc/hydra/work/$USER/conda/envs/isoseq-pipeline/bin/python",
         sqantiPath= "/sc/hydra/projects/ad-omics/data/software/SQANTI2",
-        nCores = 12,
         junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
         abundance = "all_samples/all_samples.chained_count.txt",
         gtf = referenceGTF,
@@ -324,7 +326,6 @@ rule SQANTI_all:
         " {params.gtf} {params.genome} "
 
 rule SQUANTI_all_filter:
->>>>>>> 724c83ca2af8b9f9b8b3d76c112da74519be1560
     input:
         classification = "all_samples/SQANTI2/all_samples.chained_classification.txt",
         fasta = "all_samples/SQANTI2/all_samples.chained_corrected.fasta",
@@ -414,55 +415,5 @@ rule indexGFF:
         "{params.gff3sort} {input} | bgzip > {output.gff};"
         "ml tabix;"
         "tabix {output.gff} "
-
-rule SQANTI:
-    input:
-        #fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
-        gff = "{sample}/{method}/{sample}.{method}.collapsed.gff"
-    output:
-        report = "{sample}/SQANTI2/{sample}.{method}_classification.txt"
-    params:
-        sample = "{sample}.{method}",
-        outDir = "{sample}/SQANTI2/",
-        python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-        sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2",
-        nCores = 12,
-        #abundance = "{sample}/cupcake/{sample}.{method}.abundance.txt",
-        gtf = referenceGTF,
-        genome = referenceFa + ".fa",
-        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
-        intropolis = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
-        cage = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/hg38.cage_peak_phase1and2combined_coord.bed",
-        polya = "/sc/orga/projects/ad-omics/data/references/hg38_reference/SQANTI2/human.polyA.list.txt"
-    shell:
-        #"export PATH=/sc/orga/projects/ad-omics/data/software/UCSC/:$PATH;"
-        #"module unload gcc;ml R/3.6.0; "
-        "export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
-        "{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
-        " --dir {params.outDir} "
-        " --out {params.sample} "
-        " -c {params.junctions} "
-        " --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
-        #" --fl_count {params.abundance}"
-        " --gtf {input.gff} " 
-        " {params.gtf} {params.genome} "
-
-# sqanti filter - only works with Cupcake output for now
-rule SQANTI_filter:
-    input:
-        classification = "{sample}/SQANTI2/{sample}.{method}_classification.txt",
-        fasta = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.fasta",
-        #sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-        gtf = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.gtf",
-        faa = "{sample}/SQANTI2/{sample}.cupcake.collapsed_corrected.faa"
-    output:
-        "{sample}/SQANTI2/{sample}_classification.filtered_lite_classification.txt"
-    params:
-        python = "/sc/orga/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-                sqantiPath= "/sc/orga/projects/ad-omics/data/software/SQANTI2"
-    shell:
-        "{params.python} {params.sqantiPath}/sqanti_filter2.py "
-        " --faa {input.faa} " #--sam {input.sam} "
-        " {input.classification} {input.fasta} {input.gtf} "    
 
 

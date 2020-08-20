@@ -1,12 +1,24 @@
 
-shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; ml purge;')
+cupcake_path = "/sc/hydra/projects/ad-omics/data/software/cDNA_Cupcake"
+
+shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; ml purge; conda activate isoseq-pipeline;')
 #shell.prefix('export PS1="";source activate isoseq-pipeline;ml R/3.6.0;')
 import pandas as pd
+import xlrd
 import glob
 metadata = config['metadata']
 
-metaDF = pd.read_csv(metadata, sep = '\t')
+# file either TSV or XLSX
+if ".tsv" in metadata:
+    metaDF = pd.read_csv(metadata, sep = '\t')
+if ".xlsx" in metadata:
+    metaDF = pd.read_excel(metadata)
+
 samples = metaDF['sample']
+sampleFA = metaDF['fasta_path']
+sampleREP = metaDF['cluster_report_path']
+
+metaDF = metaDF.set_index("sample")
 
 #print(samples)
 rawFolder = config['rawFolder']
@@ -26,17 +38,18 @@ localrules: create_chain_config
 
 rule all:
     input:
-       "TAMA_merge/tama_merge_config.txt",
-       expand("{sample}/TAMA/{sample}.bed", sample = samples), 
+        "all_samples/TAMA/all_samples_merge.txt",
+       #"TAMA_merge/tama_merge_config.txt",
+       #expand("{sample}/TAMA/{sample}.bed", sample = samples), 
     #   expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #       expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
         expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
-        "all_samples/SQANTI2/all_samples.chained_classification.txt",
-#   expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
-        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
-        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
+        #"all_samples/SQANTI2/all_samples.chained_classification.txt",
+    #   expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
+#        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
+#        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi",
     #   expand(fastqFolder + "{sample}.classification.txt", sample = samples),
-        # "multiqc/multiqc_report.html",
+         "multiqc/multiqc_report.html",
 
 # CCS - call circular consensus sequences from the SMRTcell movies
 # todo: add chunking for paralellisation
@@ -89,6 +102,30 @@ rule isoseq_cluster:
         "isoseq3 cluster --verbose --use-qvs -j 0 {input} {output.fasta};"
         "gunzip {params.fasta_gz}"
 
+
+# currently isoseq3 and clustering is outsourced to Nancy
+rule symlinkFiles:
+    input: 
+        fasta = sampleFA,
+        report = sampleREP
+    output:
+        expand("{sample}/isoseq3-cluster/{sample}.polished.hq.fasta", sample = samples),
+        expand("{sample}/isoseq3-cluster/{sample}.cluster_report.csv", sample = samples)
+    run:
+        for s in samples:
+            fa_in = metaDF.loc[s]['fasta_path']
+            rep_in = metaDF.loc[s]['cluster_report_path']
+            
+            fa_out = s + "/isoseq3-cluster/" + s + ".polished.hq.fasta"
+            rep_out = s + "/isoseq3-cluster/" + s + ".cluster_report.csv"
+
+            os.makedirs(s + "/isoseq3-cluster/", exist_ok = True)
+
+            if not os.path.exists(fa_out):
+                os.symlink(fa_in, fa_out)   
+            if not os.path.exists(rep_out):
+                os.symlink(rep_in, rep_out)
+
 #### MINIMAP 
 
 rule minimapIndex:
@@ -125,6 +162,13 @@ rule samtools:
         "samtools flagstat {output.bam} > {output.flagstat};"
         "samtools idxstats {output.bam} > {output.idxstat} "
 
+rule fastqc:
+    input: "{sample}/minimap/{sample}.hq.sam"
+    output: "{sample}/qc/{sample}.hq_fastqc.html"
+    shell:
+        "ml fastqc;"
+        "fastqc --outdir={wildcards.sample}/qc/ --format sam {input}"
+
 ## TAMA tools
 
 rule TAMA_collapse:
@@ -138,10 +182,12 @@ rule TAMA_collapse:
         script = "/sc/hydra/projects/ad-omics/data/software/tama/tama_collapse.py"
     shell:
         'conda activate py2bio;'
-        'python {params.script} -s {input.sam_sorted} -f {input.genome} -p {wildcards.sample}/TAMA/{wildcards.sample} -x no_cap'
+        'python {params.script} -s {input.sam_sorted} -f {input.genome} -p {wildcards.sample}/TAMA/{wildcards.sample} -x no_cap -rm low_mem'
 
 
 rule create_TAMA_merge_config:
+    input:
+        expand( "{sample}/TAMA/{sample}.bed", sample = samples)
     output:
         config = "TAMA_merge/tama_merge_config.txt"
     run:
@@ -154,6 +200,16 @@ rule create_TAMA_merge_config:
                 for listitem in tamaMergeRows:
                     filehandle.write('%s\n' % listitem)
 
+rule TAMA_merge:
+    input:
+        config = "TAMA_merge/tama_merge_config.txt"
+    output:
+        "all_samples/TAMA/all_samples_merge.txt"
+    params:
+        script = "/sc/hydra/projects/ad-omics/data/software/tama/tama_merge.py"
+    shell:
+        'conda activate py2bio;'
+        'python {params.script} -f {input.config} -p all_samples'
 
 
 
@@ -161,12 +217,13 @@ rule create_TAMA_merge_config:
 
 # collapse redundant reads
 # deal with 5' truncated reads - don't use dun-merge-5-shorter or filter_away
-# filter away   
+# filter away  
+# CHECK - does cupcake mind if FASTA and cluster_report are gzipped?
 rule cupcake_collapse:
     input:
         fasta =   "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
         sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
-        cluster_report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
+        cluster_report =  "{sample}/isoseq3-cluster/{sample}.cluster_report.csv"
     output:
          gff = "{sample}/cupcake/{sample}.cupcake.collapsed.gff",
          fasta = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
@@ -217,7 +274,7 @@ rule create_chain_config:
                     filehandle.write('%s\n' % listitem)
 
 
-#### SQANTI
+#### SQANTI - per-sample if chaining won't work
 
 rule SQANTI:
     input:
@@ -274,7 +331,7 @@ rule chain_samples:
         chain_gff = expand("{sample}/cupcake/chain/cupcake.collapsed.gff", sample = samples),
         chain_config = "all_samples/chain.config.txt"
     params:
-        n_cores = 8
+        n_cores = 4
     output:
         gff = "all_samples/all_samples.chained.gff",
     shell:
@@ -290,6 +347,9 @@ rule collapse_post_chain:
     output:
         "collapse_isoforms_by_sam.py --input {input.fasta} "
         "-s {input.sam_sorted} -o {params.prefix};"
+
+
+## SQANTI
 
 rule SQANTI_all:
     input:
@@ -393,14 +453,15 @@ rule rnaseqc:
 # multiqc, version 1.8.dev0 works with rnaseqc outputs
 rule multiQC:
     input:
-        "{sample}/qc/{sample}.metrics.tsv",
-        "{sample}/qc/{sample}.flagstat.txt",
-        "{sample}/qc/{sample}.idxstat.txt"
+        expand("{sample}/qc/{sample}.metrics.tsv", sample = samples),
+        expand("{sample}/qc/{sample}.flagstat.txt", sample = samples),
+        expand("{sample}/qc/{sample}.idxstat.txt", sample = samples),
+        expand("{sample}/qc/{sample}.hq_fastqc.html", sample = samples)
     output:
          "multiqc/multiqc_report.html"
     shell:
         "export LC_ALL=en_US.UTF-8; export LANG=en_US.UTF-8;"
-        "multiqc -f --outdir {outFolder}multiqc/ {outFolder}" 
+        "multiqc -f --outdir multiqc/ ." 
 
 # sort and tabix index final GFF
 rule indexGFF:

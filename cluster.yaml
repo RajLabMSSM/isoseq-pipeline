@@ -3,10 +3,15 @@ __default__:
   queue: express
   cores: 8
   mem: 3000
-  time: '60'
+  time: '120'
   name: $(basename $(pwd)):{rule}:{wildcards}
   output: logs/{rule}:{wildcards}.stdout
   error: logs/{rule}:{wildcards}.stderr
+  himem: ""
+merge_flnc_bams:
+  cores: 8
+  mem: 3000
+  time: 240
 chain_samples:
     time: '180'
     mem: 3000
@@ -16,7 +21,7 @@ samtools:
     mem: 3000
     time: 60
 minimap:
-    cores: 8
+    cores: 16
     mem: 3000
     time: 60
 SQANTI_all:
@@ -42,6 +47,13 @@ LIMA:
 refine:
    cores: 4
    mem: 25000
-cluster:
-   cores: 20
-   mem: 30000
+align_flnc_bam:
+   cores: 16
+   mem: 3000
+   time: 240
+isoseq3_cluster:
+   queue: premium
+   cores: 1
+   mem: 250000
+   time: 720
+   himem: "-R himem"

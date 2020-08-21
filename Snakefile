@@ -38,18 +38,19 @@ localrules: create_chain_config
 
 rule all:
     input:
-        "all_samples/TAMA/all_samples_merge.txt",
+        expand("all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta", chr = range(1,23) )
+        #"all_samples/TAMA/all_samples_merge.txt",
        #"TAMA_merge/tama_merge_config.txt",
        #expand("{sample}/TAMA/{sample}.bed", sample = samples), 
     #   expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #       expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
-        expand( "{sample}/qc/{sample}.metrics.tsv", sample = samples),
+        #expand( "{sample}/qc/{sample}.metrics.tsv", sample = "all_samples"),
         #"all_samples/SQANTI2/all_samples.chained_classification.txt",
     #   expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
 #        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
 #        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi",
     #   expand(fastqFolder + "{sample}.classification.txt", sample = samples),
-         "multiqc/multiqc_report.html",
+         #"multiqc/multiqc_report.html",
 
 # CCS - call circular consensus sequences from the SMRTcell movies
 # todo: add chunking for paralellisation
@@ -89,17 +90,56 @@ rule isoseq_refine:
          "{sample}/isoseq3-refine/{sample}.flnc.bam"
     shell:
         "isoseq3 refine --require-polya {input} {primers} {output}"
-# polish
-rule isoseq_cluster:
+
+# merge flnc.bam files
+rule merge_flnc_bams:
     input:
-        "{sample}/isoseq3-refine/{sample}.flnc.bam"
-    params:
-        fasta_gz =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta.gz"
+        metaDF["flnc_bam_path"]
     output:
-        fasta =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
-        report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
+        "all_samples/flnc_bam/all_samples.flnc.bam"
+    params:
+        bams = " -in ".join(metaDF["flnc_bam_path"])
     shell:
-        "isoseq3 cluster --verbose --use-qvs -j 0 {input} {output.fasta};"
+        "ml bamtools;bamtools merge -in {params.bams} -out {output}"
+
+# align to reference genome using pbmm2
+rule align_flnc_bam:
+    input:
+        bam = "all_samples/flnc_bam/all_samples.flnc.bam",
+        mmi = referenceFa + ".mmi"
+    output:
+        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
+    shell:
+        "pbmm2 align --sort -j 16 -m 3G --preset=ISOSEQ {input.mmi} {input.bam} {output.bam}"
+
+# split bams by chromosome
+rule split_flnc_bam:
+    input:
+        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
+    output:
+        expand("all_samples/flnc_bam/all_samples.flnc.aligned.chr{chr}.bam", chr = range(1,23) )
+    shell:
+        "ml bamtools;"
+        "bamtools split -in {input.bam} -reference  -refPrefix """
+
+# cluster and polish together
+rule isoseq3_cluster:
+    input:
+        "all_samples/flnc_bam/all_samples.flnc.aligned.chr{chr}.bam"
+        #"all_samples/flnc_bam/all_samples.flnc.bam"
+        #"{sample}/isoseq3-refine/{sample}.flnc.bam"
+    params:
+        fasta_gz = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta.gz",
+        bam = "all_samples/isoseq3-cluster/all_samples.chr{chr}.bam"
+        #fasta_gz =  "{sample}/isoseq3-cluster/{sample}.hq.fasta.gz"
+        
+    output:
+        fasta = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta",
+        report = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.cluster_report.csv"
+        #fasta =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
+        #report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
+    shell:
+        "isoseq3 cluster --verbose --use-qvs -j 0 {input} {params.bam};"
         "gunzip {params.fasta_gz}"
 
 
@@ -109,14 +149,14 @@ rule symlinkFiles:
         fasta = sampleFA,
         report = sampleREP
     output:
-        expand("{sample}/isoseq3-cluster/{sample}.polished.hq.fasta", sample = samples),
+        expand("{sample}/isoseq3-cluster/{sample}.hq.fasta", sample = samples),
         expand("{sample}/isoseq3-cluster/{sample}.cluster_report.csv", sample = samples)
     run:
         for s in samples:
             fa_in = metaDF.loc[s]['fasta_path']
             rep_in = metaDF.loc[s]['cluster_report_path']
             
-            fa_out = s + "/isoseq3-cluster/" + s + ".polished.hq.fasta"
+            fa_out = s + "/isoseq3-cluster/" + s + ".hq.fasta"
             rep_out = s + "/isoseq3-cluster/" + s + ".cluster_report.csv"
 
             os.makedirs(s + "/isoseq3-cluster/", exist_ok = True)
@@ -136,13 +176,16 @@ rule minimapIndex:
 
 rule minimap:
     input: 
-        fastq =  "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
+        #fastq = "all_samples/isoseq3-cluster/all_samples.hq.fasta",
+        fastq =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
         ref = referenceFa + ".fa",
         index = referenceFa + ".mmi"
     params: 
         "-ax splice -t 4 -uf --secondary=no -C5"
         #config['minimapParams']
     output: 
+        #sam = "all_samples/minimap/all_samples.hq.sam",
+        #sam_sorted = "all_samples/minimap/all_samples.hq.sorted.sam"
         sam =  "{sample}/minimap/{sample}.hq.sam",
         sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam"
     shell:
@@ -221,7 +264,7 @@ rule TAMA_merge:
 # CHECK - does cupcake mind if FASTA and cluster_report are gzipped?
 rule cupcake_collapse:
     input:
-        fasta =   "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta",
+        fasta =   "{sample}/isoseq3-cluster/{sample}.hq.fasta",
         sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
         cluster_report =  "{sample}/isoseq3-cluster/{sample}.cluster_report.csv"
     output:
@@ -229,11 +272,11 @@ rule cupcake_collapse:
          fasta = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
          group = "{sample}/cupcake/{sample}.cupcake.collapsed.group.txt",
          stat = "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
-         count = "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt",
+         count = "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt"
          #fasta2 = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
-         chain_gff = "{sample}/cupcake/chain/cupcake.collapsed.gff",
-         chain_group = "{sample}/cupcake/chain/cupcake.collapsed.group.txt",
-         chain_count = "{sample}/cupcake/chain/cupcake.collapsed.abundance.txt" 
+         #chain_gff = "{sample}/cupcake/chain/cupcake.collapsed.gff",
+         #chain_group = "{sample}/cupcake/chain/cupcake.collapsed.group.txt",
+         #chain_count = "{sample}/cupcake/chain/cupcake.collapsed.abundance.txt" 
 
     params:
         prefix = "{sample}/cupcake/{sample}.cupcake",
@@ -251,9 +294,9 @@ rule cupcake_collapse:
         # get abundance counts
         #"get_abundance_post_collapse.py {params.prefix}.collapsed.collapsed {input.cluster_report};"
         # copy files to chain directory - omit sample name from file name
-        "cp {output.gff} {output.chain_gff};"
-        "cp {output.group} {output.chain_group};"
-        "cp {output.count} {output.chain_count}"
+        #"cp {output.gff} {output.chain_gff};"
+        #"cp {output.group} {output.chain_group};"
+        #"cp {output.count} {output.chain_count}"
 
 
 rule create_chain_config:
@@ -278,7 +321,7 @@ rule create_chain_config:
 
 rule SQANTI:
     input:
-        #fasta = "{sample}/isoseq3-cluster/{sample}.polished.hq.fasta"
+        #fasta = "{sample}/isoseq3-cluster/{sample}.hq.fasta"
         gff = "{sample}/{method}/{sample}.{method}.collapsed.filtered.gff"
     output:
         report = "{sample}/SQANTI2/{sample}.{method}_classification.txt"

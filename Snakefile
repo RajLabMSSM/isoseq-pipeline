@@ -36,15 +36,17 @@ junctionArgs = " ".join(["-c " + f for f in junctions])
 
 localrules: create_chain_config
 
+chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
+
 rule all:
     input:
-        expand("all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta", chr = range(1,23) )
+        expand("all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta", chr = chromosomes + ["U"] ),
         #"all_samples/TAMA/all_samples_merge.txt",
        #"TAMA_merge/tama_merge_config.txt",
        #expand("{sample}/TAMA/{sample}.bed", sample = samples), 
     #   expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #       expand( "{sample}/SQANTI2/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
-        #expand( "{sample}/qc/{sample}.metrics.tsv", sample = "all_samples"),
+        expand( "{sample}/qc/{sample}.metrics.tsv", sample = "all_samples")
         #"all_samples/SQANTI2/all_samples.chained_classification.txt",
     #   expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
 #        "all_samples/SQANTI2_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
@@ -110,17 +112,28 @@ rule align_flnc_bam:
     output:
         bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
     shell:
-        "pbmm2 align --sort -j 16 -m 3G --preset=ISOSEQ {input.mmi} {input.bam} {output.bam}"
+        "pbmm2 align --sort -j 32 --sort-threads 4 -m 3G --preset=ISOSEQ --log-level INFO --unmapped {input.mmi} {input.bam} {output.bam}"
 
 # split bams by chromosome
 rule split_flnc_bam:
     input:
         bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
     output:
-        expand("all_samples/flnc_bam/all_samples.flnc.aligned.chr{chr}.bam", chr = range(1,23) )
+        expand("all_samples/flnc_bam/all_samples.flnc.aligned.chr{chr}.bam", chr = chromosomes )
     shell:
         "ml bamtools;"
-        "bamtools split -in {input.bam} -reference  -refPrefix """
+        "bamtools split -in {input.bam} -reference  -refPrefix \"\" "
+
+# get out unmapped reads for clustering
+rule split_unmapped_flnc_bam:
+    input:
+        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
+    output:
+        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.chrU.bam"
+    shell:
+        "ml samtools;"
+        "samtools view -bh -f 4 {input.bam} > {output.bam}" 
+
 
 # cluster and polish together
 rule isoseq3_cluster:
@@ -135,13 +148,31 @@ rule isoseq3_cluster:
         
     output:
         fasta = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta",
-        report = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.cluster_report.csv"
+        report = "all_samples/isoseq3-cluster/all_samples.chr{chr}.cluster_report.csv"
         #fasta =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
         #report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
     shell:
         "isoseq3 cluster --verbose --use-qvs -j 0 {input} {params.bam};"
         "gunzip {params.fasta_gz}"
 
+# prepend chrom name to clustered FASTA lines before merging
+rule prepend_chr_name:
+    input:
+         fasta = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta"
+    output:
+        fasta =  "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.prepend.fasta"
+    shell:
+        "ml bioawk;"
+        "bioawk -c fastx '{{ print $name\"/chr{wildcards.chr}\"; print $seq}}' {input.fasta} > {output.fasta}"
+
+# merge FASTA together for full alignment
+rule merge_fasta:
+    input:
+        expand("all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.prepend.fasta", chr = chromosomes + ["U"] )
+    output:
+        "all_samples/isoseq3-cluster/all_samples.merged.hq.prepend.fasta"    
+    shell:
+        "cat {input} > {output}"
 
 # currently isoseq3 and clustering is outsourced to Nancy
 rule symlinkFiles:
@@ -176,8 +207,8 @@ rule minimapIndex:
 
 rule minimap:
     input: 
-        #fastq = "all_samples/isoseq3-cluster/all_samples.hq.fasta",
-        fastq =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
+        fastq = "all_samples/isoseq3-cluster/all_samples.merged.hq.prepend.fasta",
+        #fastq =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
         ref = referenceFa + ".fa",
         index = referenceFa + ".mmi"
     params: 

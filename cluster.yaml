@@ -1,5 +1,7 @@
+# cluster.yaml
+# set job submission parameters for each rule
+# himem - default should be "", "-R himem" if you need the himem nodes
 __default__:
-  #partition: chimera
   queue: express
   cores: 8
   mem: 3000
@@ -32,10 +34,6 @@ TAMA_collapse:
     cores: 16
     mem: 3000
     time: 60
-# extractJunctions:
-#   time: '120:00'
-#   cores: 1
-#   mem: 3750
 CCS:
    time: 72:00
    queue: 'long'
@@ -48,12 +46,20 @@ refine:
    cores: 4
    mem: 25000
 align_flnc_bam:
-   cores: 16
+   cores: 32
    mem: 3000
-   time: 240
+   time: 720
+split_flnc_bam:
+    cores: 1
+    mem: 3000
+    time: 719
+split_unmapped_flnc_bam:
+    cores: 1
+    mem: 3000
+    time: 719
 isoseq3_cluster:
    queue: premium
    cores: 1
-   mem: 250000
-   time: 720
+   mem: 100000
+   time: 4000
    himem: "-R himem"

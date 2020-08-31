@@ -152,7 +152,7 @@ rule isoseq3_cluster:
         #fasta =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
         #report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
     shell:
-        "isoseq3 cluster --verbose --use-qvs -j 0 {input} {params.bam};"
+        "isoseq3 cluster --verbose --use-qvs -j 24 {input} {params.bam};"
         "gunzip {params.fasta_gz}"
 
 # prepend chrom name to clustered FASTA lines before merging
@@ -163,7 +163,7 @@ rule prepend_chr_name:
         fasta =  "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.prepend.fasta"
     shell:
         "ml bioawk;"
-        "bioawk -c fastx '{{ print $name\"/chr{wildcards.chr}\"; print $seq}}' {input.fasta} > {output.fasta}"
+        "bioawk -c fastx '{{ print $name\"/chr{wildcards.chr} \"$comment; print $seq}}' {input.fasta} > {output.fasta}"
 
 # merge FASTA together for full alignment
 rule merge_fasta:

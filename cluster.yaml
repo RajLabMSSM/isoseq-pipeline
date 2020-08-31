@@ -59,7 +59,7 @@ split_unmapped_flnc_bam:
     time: 719
 isoseq3_cluster:
    queue: premium
-   cores: 1
-   mem: 100000
-   time: 4000
-   himem: "-R himem"
+   cores: 28
+   mem: 3000
+   time: 2880
+   #himem: "-R himem"

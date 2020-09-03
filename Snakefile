@@ -298,14 +298,17 @@ rule demultiplex_abundances:
         flnc_report = "all_samples/flnc_bam/all_samples.merged.flnc_report.csv",
         read_stat = "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
     output:
-        "test"
+        "all_samples/cupcake/all_samples.demux_fl_count.csv"
+    params:
+        script = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake/post_isoseq_cluster/demux_isoseq_with_genome.py"
     shell:    
-        "test"
+        "python {params.script} --mapped_fafq {input.fasta} --read_stat {input.read_stat} --classify_csv {input.flnc_report} -o {output} "
 ## SQANTI
 
 rule SQANTI_all:
     input:
-        gff = "all_samples/cupcake/all_samples.cupcake.collapsed.gff"
+        gff = "all_samples/cupcake/all_samples.cupcake.collapsed.gff",
+        abundance = "all_samples/cupcake/all_samples.demux_fl_count.csv"
     output:
         fasta = "all_samples/SQANTI3/all_samples.cupcake.collapsed_corrected.fasta",
         gtf = "all_samples/SQANTI3/all_samples.cupcake.collapsed_corrected.gtf",
@@ -318,7 +321,7 @@ rule SQANTI_all:
         python = "/sc/hydra/work/$USER/conda/envs/isoseq-pipeline/bin/python",
         sqantiPath= "/sc/arion/projects/ad-omics/data/software/SQANT3",
         #junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
-        #abundance = "all_samples/all_samples.chained_count.txt",
+        #abundance = "all_samples/cupcake/all_samples.demux_fl_count.csv" #"all_samples/all_samples.chained_count.txt",
         gtf = referenceGTF,
         genome = referenceFa + ".fa",
         intropolis = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
@@ -334,7 +337,7 @@ rule SQANTI_all:
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} " 
         "--skipORF " # skipping ORF finding for now as it's very slow
         #"-c {params.intropolis}"
-        #" --fl_count {params.abundance}"
+        " --fl_count {input.abundance}"
         " --gtf {input.gff} "
         " {params.gtf} {params.genome} "
 

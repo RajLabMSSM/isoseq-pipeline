@@ -25,11 +25,11 @@ samtools:
 minimap:
     cores: 16
     mem: 3000
-    time: 60
+    time: 360
 SQANTI_all:
-    time: 180
-    mem: 3200
-    cores: 32
+    time: 360
+    mem: 3000
+    cores: 16
 TAMA_collapse:
     cores: 16
     mem: 3000

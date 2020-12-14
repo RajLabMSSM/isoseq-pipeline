@@ -27,7 +27,7 @@ minimap:
     mem: 3000
     time: 360
 SQANTI_all:
-    time: 360
+    time: 720
     mem: 3000
     cores: 16
 TAMA_collapse:
@@ -63,3 +63,13 @@ isoseq3_cluster:
    mem: 3000
    time: 2880
    #himem: "-R himem"
+cupcake_collapse:
+    cores: 16
+    mem: 3000
+    time: '720'
+    #himem: "-R himem"
+demultiplex_abundances:
+    cores: 16
+    mem: 3000
+    time: '720'
+    #himem: "-R himem"

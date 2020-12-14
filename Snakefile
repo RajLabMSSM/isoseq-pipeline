@@ -40,7 +40,11 @@ chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
 
 rule all:
     input:
-        "all_samples/SQANTI3/all_samples.cupcake.collapsed_classification.txt",
+      "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
+      "all_samples/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz", 
+      "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
+      #  "test.txt",
+         #"all_samples/SQANTI3/all_samples.cupcake.collapsed_classification.txt",
         expand("all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta", chr = chromosomes + ["U"] ),
         #"all_samples/TAMA/all_samples_merge.txt",
        #"TAMA_merge/tama_merge_config.txt",
@@ -295,77 +299,117 @@ rule cupcake_collapse:
 ## DEMULTIPLEX
 rule demultiplex_abundances:
     input:
+        fasta = "all_samples/cupcake/all_samples.cupcake.collapsed.rep.fa",
         flnc_report = "all_samples/flnc_bam/all_samples.merged.flnc_report.csv",
-        read_stat = "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
+        read_stat = "all_samples/cupcake/all_samples.cupcake.collapsed.read_stat.txt",
     output:
         "all_samples/cupcake/all_samples.demux_fl_count.csv"
     params:
         script = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake/post_isoseq_cluster/demux_isoseq_with_genome.py"
     shell:    
         "python {params.script} --mapped_fafq {input.fasta} --read_stat {input.read_stat} --classify_csv {input.flnc_report} -o {output} "
+
+## FILTER MISSINGNESS
+# remove all transcripts with greater than 20% missingness
+rule filter_missingness:
+    input:
+        counts = "all_samples/cupcake/all_samples.demux_fl_count.csv",
+        gff = "all_samples/cupcake/all_samples.cupcake.collapsed.gff"
+    output:
+        counts = "all_samples/cupcake_filtered/all_samples.demux_fl_count_filtered.csv",
+        gff = "all_samples/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf"
+    params:
+        script = "scripts/filter_missingness.R"
+    shell:
+        "ml R/3.6.0;"
+        "Rscript {params.script} {input.counts} {input.gff}"
+
 ## SQANTI
 
 rule SQANTI_all:
     input:
-        gff = "all_samples/cupcake/all_samples.cupcake.collapsed.gff",
-        abundance = "all_samples/cupcake/all_samples.demux_fl_count.csv"
+        gff = "all_samples/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf",
+        abundance = "all_samples/cupcake_filtered/all_samples.demux_fl_count_filtered.csv"
     output:
-        fasta = "all_samples/SQANTI3/all_samples.cupcake.collapsed_corrected.fasta",
-        gtf = "all_samples/SQANTI3/all_samples.cupcake.collapsed_corrected.gtf",
-        report = "all_samples/SQANTI3/all_samples.cupcake.collapsed_classification.txt"
+        #"test.txt"
+        fasta = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.fasta",
+        gtf = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.gtf",
+        report = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt"
     params:
-        sample = "all_samples.cupcake.collapsed",
+        sample = "all_samples.cupcake.collapsed.filtered",
         outDir = "all_samples/SQANTI3/",
         nCores = 16,
         nChunks = 12,
-        python = "/sc/hydra/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-        sqantiPath= "/sc/arion/projects/ad-omics/data/software/SQANT3",
+        software= "/sc/arion/projects/ad-omics/data/software",
         #junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
-        #abundance = "all_samples/cupcake/all_samples.demux_fl_count.csv" #"all_samples/all_samples.chained_count.txt",
         gtf = referenceGTF,
         genome = referenceFa + ".fa",
-        intropolis = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
-        cage = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
-        polya = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/human.polyA.list.txt"
+        intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+        cage = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
+        polya = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/human.polyA.list.txt",
+        isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
     shell:
-        "conda activate SQANTI3.env;"
-        #"export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
-        "{params.python} {params.sqantiPath}/sqanti_qc3.py -t {params.nCores} --aligner_choice=minimap2"
+        "conda activate SQANTI3.env; module purge;"
+        "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
+        "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
+        "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} --aligner_choice=minimap2"
         " --dir {params.outDir} "
         " --out {params.sample} "
         #" -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} " 
-        "--skipORF " # skipping ORF finding for now as it's very slow
+        #"--skipORF " # skipping ORF finding for now as it's very slow
         #"-c {params.intropolis}"
         " --fl_count {input.abundance}"
         " --gtf {input.gff} "
+        " --isoAnnotLite --gff3 {params.isoAnnotGFF}"
         " {params.gtf} {params.genome} "
 
-rule SQUANTI_all_filter:
+rule SQANTI_all_filter:
     input:
-        classification = "all_samples/SQANTI3/all_samples.chained_classification.txt",
-        fasta = "all_samples/SQANTI3/all_samples.chained_corrected.fasta",
+        classification = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
+        fasta = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.fasta",
         #sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-        gtf = "all_samples/SQANTI3/all_samples.chained_corrected.gtf"
+        gtf = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.gtf"
         #faa = "all_samples/SQANTI3/all_samples.chained_corrected.faa"
     output:
-        "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
-        "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered_lite.gtf"
+        "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
+        "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
     params:
         python = "/sc/hydra/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-        sqantiPath= "/sc/hydra/projects/ad-omics/data/software/SQANTI3"
+        software= "/sc/arion/projects/ad-omics/data/software"
     shell:
-        " mkdir -p all_samples/SQANTI3_filtered; "
-        "{params.python} {params.sqantiPath}/sqanti_filter2.py "
+        "mkdir -p all_samples/SQANTI3_filtered; "
+        "conda activate SQANTI3.env; module purge;"
+        "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
+        "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
+        "python {params.software}/SQANTI3/sqanti3_RulesFilter.py "
         #" --faa {input.faa} " #--sam {input.sam} "
         " {input.classification} {input.fasta} {input.gtf} "
         " -r 6 -a 0.6 " # intra-priming
         " --filter_mono_exonic " # remove all mono-exons
         #" --skipGTF --skipFaFq " # don't write out new FA and GTF - very slow currently
         "; "   
-        " mv all_samples/SQANTI3/*png all_samples/SQANTI2_filtered/;"
-        " mv all_samples/SQANTI3/*filtered*lite* all_samples/SQANTI2_filtered/ "
+        " mv all_samples/SQANTI3/*png all_samples/SQANTI3_filtered/;"
+        " mv all_samples/SQANTI3/*filtered*lite* all_samples/SQANTI3_filtered/ "
 
+
+#### IsoAnnot
+
+rule isoaAnotLite:
+    input:
+        classification = "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
+        gtf = "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf",
+        junctions = "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_junctions.txt",
+        isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
+    output:
+        "all_samples/IsoAnnot/all_samples.filtered_lite_tappAS_annot_from_SQANTI3.gff3"
+    params:
+        software =  "/sc/arion/projects/ad-omics/data/software",
+        prefix = "all_samples/IsoAnnot/all_samples.filtered_lite"
+    shell:
+        "mkdir -p all_samples/IsoAnnot/;"
+        "conda activate SQANTI3.env; module purge;"
+        "python {params.software}/SQANTI3/utilities/IsoAnnotLite_SQ3.py {input.gtf} {input.classification} {input.junctions} -gff3 {input.isoAnnotGFF} -o {params.prefix}"
 #### MISC
 
 rule collapseAnnotation:
@@ -404,12 +448,12 @@ rule multiQC:
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered_lite.gtf"
+        "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
     output:
-        gff = "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered.sorted.gff.gz",
-        index = "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi"
+        gff = "all_samples/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz",
+        index = "all_samples/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz.tbi"
     params:
-        gff3sort = "/sc/hydra/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
+        gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:
         "{params.gff3sort} {input} | bgzip > {output.gff};"
         "ml tabix;"

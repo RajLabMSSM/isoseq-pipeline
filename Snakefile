@@ -1,5 +1,5 @@
 
-cupcake_path = "/sc/hydra/projects/ad-omics/data/software/cDNA_Cupcake"
+cupcake_path = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake"
 
 shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; ml purge; conda activate isoseq-pipeline;')
 #shell.prefix('export PS1="";source activate isoseq-pipeline;ml R/3.6.0;')
@@ -30,7 +30,7 @@ referenceGTF = config['referenceGTF']
 primers = "reference/NEB_primers_01_2019.fa"
 
 # short read junctions
-junctionFolder = "/sc/hydra/projects/ad-omics/microglia_isoseq/short_read_junctions"
+junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
 junctions =  glob.glob(junctionFolder + "/*SJ.out.tab")
 junctionArgs = " ".join(["-c " + f for f in junctions])
 
@@ -310,7 +310,9 @@ rule demultiplex_abundances:
         "python {params.script} --mapped_fafq {input.fasta} --read_stat {input.read_stat} --classify_csv {input.flnc_report} -o {output} "
 
 ## FILTER MISSINGNESS
-# remove all transcripts with greater than 20% missingness
+# remove all transcripts with greater than X% missingness
+# currently - present in at least 2 samples
+# remove monoexonic transcripts to reduce overhead for SQANTI
 rule filter_missingness:
     input:
         counts = "all_samples/cupcake/all_samples.demux_fl_count.csv",
@@ -319,13 +321,17 @@ rule filter_missingness:
         counts = "all_samples/cupcake_filtered/all_samples.demux_fl_count_filtered.csv",
         gff = "all_samples/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf"
     params:
-        script = "scripts/filter_missingness.R"
+        script = "scripts/filter_missingness.R",
+        input_prefix = "all_samples/cupcake/all_samples",
+        output_prefix = "all_samples/cupcake_filtered/all_samples",
+        min_samples = 2, # eventually put in config
+        min_reads = 2
     shell:
         "ml R/3.6.0;"
-        "Rscript {params.script} {input.counts} {input.gff}"
+        "Rscript {params.script} -i {params.input_prefix} -o {params.output_prefix} --min_samples {params.min_samples} --min_reads {params.min_reads} --remove_monoexons"
 
 ## SQANTI
-
+# classifies each transcript in the GTF
 rule SQANTI_all:
     input:
         gff = "all_samples/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf",
@@ -341,7 +347,8 @@ rule SQANTI_all:
         nCores = 16,
         nChunks = 12,
         software= "/sc/arion/projects/ad-omics/data/software",
-        #junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
+        #junctions = junctionArgs,
+        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
         gtf = referenceGTF,
         genome = referenceFa + ".fa",
         intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
@@ -355,13 +362,13 @@ rule SQANTI_all:
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} --aligner_choice=minimap2"
         " --dir {params.outDir} "
         " --out {params.sample} "
-        #" -c {params.junctions} "
+        " -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} " 
-        #"--skipORF " # skipping ORF finding for now as it's very slow
+        #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"
         " --fl_count {input.abundance}"
         " --gtf {input.gff} "
-        " --isoAnnotLite --gff3 {params.isoAnnotGFF}"
+        #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"
         " {params.gtf} {params.genome} "
 
 rule SQANTI_all_filter:
@@ -375,7 +382,7 @@ rule SQANTI_all_filter:
         "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
         "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
     params:
-        python = "/sc/hydra/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+        python = "/sc/arion/work/$USER/conda/envs/isoseq-pipeline/bin/python",
         software= "/sc/arion/projects/ad-omics/data/software"
     shell:
         "mkdir -p all_samples/SQANTI3_filtered; "
@@ -387,7 +394,6 @@ rule SQANTI_all_filter:
         " {input.classification} {input.fasta} {input.gtf} "
         " -r 6 -a 0.6 " # intra-priming
         " --filter_mono_exonic " # remove all mono-exons
-        #" --skipGTF --skipFaFq " # don't write out new FA and GTF - very slow currently
         "; "   
         " mv all_samples/SQANTI3/*png all_samples/SQANTI3_filtered/;"
         " mv all_samples/SQANTI3/*filtered*lite* all_samples/SQANTI3_filtered/ "
@@ -495,7 +501,7 @@ rule stringtie:
         bam =  "{sample}/minimap/{sample}_sorted.bam"
     params:
         gtf = referenceGTF,
-        stringtiePath = "/sc/hydra/projects/ad-omics/data/software/stringtie"
+        stringtiePath = "/sc/arion/projects/ad-omics/data/software/stringtie"
     output:
         gtf = "{sample}/stringtie/{sample}.stringtie.collapsed.gtf",
         gff = "{sample}/stringtie/{sample}.stringtie.collapsed.gff"
@@ -564,11 +570,11 @@ rule SQANTI:
         gtf = referenceGTF,
         genome = referenceFa + ".fa",
         junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
-        intropolis = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
-        cage = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
-        polya = "/sc/hydra/projects/ad-omics/data/references/hg38_reference/SQANTI3/human.polyA.list.txt"
+        intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+        cage = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
+        polya = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/human.polyA.list.txt"
     shell:
-        #"export PATH=/sc/hydra/projects/ad-omics/data/software/UCSC/:$PATH;"
+        #"export PATH=/sc/arion/projects/ad-omics/data/software/UCSC/:$PATH;"
         #"module unload gcc;ml R/3.6.0; "
         "export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
         "{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
@@ -592,8 +598,8 @@ rule SQUANTI_filter:
     output:
         "{sample}/SQANTI3/{sample}_classification.filtered_lite_classification.txt"
     params:
-        python = "/sc/hydra/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-        sqantiPath= "/sc/hydra/projects/ad-omics/data/software/SQANTI3"
+        python = "/sc/arion/work/$USER/conda/envs/isoseq-pipeline/bin/python",
+        sqantiPath= "/sc/arion/projects/ad-omics/data/software/SQANTI3"
     shell:
         "{params.python} {params.sqantiPath}/sqanti_filter2.py "
         " --faa {input.faa} " #--sam {input.sam} "
@@ -609,7 +615,7 @@ rule TAMA_collapse:
         bed = "{sample}/TAMA/{sample}.bed",
         txt = "{sample}/TAMA/{sample}_read.txt"
     params:
-        script = "/sc/hydra/projects/ad-omics/data/software/tama/tama_collapse.py"
+        script = "/sc/arion/projects/ad-omics/data/software/tama/tama_collapse.py"
     shell:
         'conda activate py2bio;'
         'python {params.script} -s {input.sam_sorted} -f {input.genome} -p {wildcards.sample}/TAMA/{wildcards.sample} -x no_cap -rm low_mem'
@@ -636,7 +642,7 @@ rule TAMA_merge:
     output:
         "all_samples/TAMA/all_samples_merge.txt"
     params:
-        script = "/sc/hydra/projects/ad-omics/data/software/tama/tama_merge.py"
+        script = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
     shell:
         'conda activate py2bio;'
         'python {params.script} -f {input.config} -p all_samples'

@@ -11,9 +11,10 @@ __default__:
   error: logs/{rule}:{wildcards}.stderr
   himem: ""
 merge_flnc_bams:
-  cores: 8
+  cores: 1
   mem: 3000
-  time: 240
+  time: 1440
+  queue: premium
 chain_samples:
     time: '180'
     mem: 3000

@@ -1,7 +1,7 @@
 
 cupcake_path = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake"
 
-shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; ml purge; conda activate isoseq-pipeline;')
+shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate isoseq-pipeline; module purge')
 #shell.prefix('export PS1="";source activate isoseq-pipeline;ml R/3.6.0;')
 import pandas as pd
 import xlrd
@@ -40,22 +40,25 @@ chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
 
 rule all:
     input:
-      "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
-      "all_samples/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz", 
-      "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
-      #  "test.txt",
-         #"all_samples/SQANTI3/all_samples.cupcake.collapsed_classification.txt",
-        expand("all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta", chr = chromosomes + ["U"] ),
-        #"all_samples/TAMA/all_samples_merge.txt",
+      dataCode + "/flnc_bam/all_samples.flnc.aligned.bam",
+      dataCode + "/cupcake/all_samples.demux_fl_count.csv"
+      #dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
+      #dataCode + "/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz", 
+      #dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
+      
+#  "test.txt",
+         #dataCode + "/SQANTI3/all_samples.cupcake.collapsed_classification.txt",
+        #expand(dataCode + "/isoseq3-cluster/all_samples.chr{chr}.hq.fasta", chr = chromosomes + ["U"] ),
+        #dataCode + "/TAMA/all_samples_merge.txt",
        #"TAMA_merge/tama_merge_config.txt",
        #expand("{sample}/TAMA/{sample}.bed", sample = samples), 
     #   expand( "{sample}/cupcake/{sample}.cupcake.abundance.txt", sample = samples),
 #       expand( "{sample}/SQANTI3/{sample}.{method}_classification.txt", sample = samples, method = ["stringtie","cupcake"]),
-        expand( "{sample}/qc/{sample}.metrics.tsv", sample = "all_samples")
-        #"all_samples/SQANTI3/all_samples.chained_classification.txt",
+        #expand( "{sample}/qc/{sample}.metrics.tsv", sample = dataCode + "")
+        #dataCode + "/SQANTI3/all_samples.chained_classification.txt",
     #   expand( "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
-#        "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
-#        "all_samples/SQANTI3_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi",
+#        dataCode + "/SQANTI3_filtered/all_samples.chained_classification.filtered_lite_classification.txt",
+#        dataCode + "/SQANTI3_filtered/all_samples.chained_classification.filtered.sorted.gff.gz.tbi",
     #   expand(fastqFolder + "{sample}.classification.txt", sample = samples),
          #"multiqc/multiqc_report.html",
 
@@ -98,6 +101,14 @@ rule isoseq_refine:
     shell:
         "isoseq3 refine --require-polya {input} {primers} {output}"
 
+# run FASTQC on each BAM separately
+rule fastqc:
+    input: "{sample}/minimap/{sample}.hq.sam"
+    output: "{sample}/qc/{sample}.hq_fastqc.html"
+    shell:
+        "ml fastqc;"
+        "fastqc --outdir={wildcards.sample}/qc/ --format bam {input}"
+
 # prep FLNC report files for demultiplexing later
 rule prep_flnc_reports:
     input:
@@ -105,7 +116,7 @@ rule prep_flnc_reports:
     params:
         script = "scripts/prepare_flnc_reports.R"
     output:
-        "all_samples/flnc_bam/all_samples.merged.flnc_report.csv"
+        dataCode + "/flnc_bam/all_samples.merged.flnc_report.csv"
     shell:
         "ml R/3.6.0; Rscript {params.script} {input} {output}" 
 
@@ -114,7 +125,7 @@ rule merge_flnc_bams:
     input:
         metaDF["flnc_bam_path"]
     output:
-        "all_samples/flnc_bam/all_samples.flnc.bam"
+        dataCode + "/flnc_bam/all_samples.flnc.bam"
     params:
         bams = " -in ".join(metaDF["flnc_bam_path"])
     shell:
@@ -123,136 +134,46 @@ rule merge_flnc_bams:
 # align to reference genome using pbmm2
 rule align_flnc_bam:
     input:
-        bam = "all_samples/flnc_bam/all_samples.flnc.bam",
+        bam = dataCode + "/flnc_bam/all_samples.flnc.bam",
         mmi = referenceFa + ".mmi"
     output:
-        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
+        bam = dataCode + "/flnc_bam/all_samples.flnc.aligned.bam"
     shell:
         "pbmm2 align --sort -j 32 --sort-threads 4 -m 3G --preset=ISOSEQ --log-level INFO --unmapped {input.mmi} {input.bam} {output.bam}"
 
-# split bams by chromosome
-rule split_flnc_bam:
-    input:
-        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
-    output:
-        expand("all_samples/flnc_bam/all_samples.flnc.aligned.chr{chr}.bam", chr = chromosomes )
-    shell:
-        "ml bamtools;"
-        "bamtools split -in {input.bam} -reference  -refPrefix \"\" "
-
-# get out unmapped reads for clustering
-rule split_unmapped_flnc_bam:
-    input:
-        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.bam"
-    output:
-        bam = "all_samples/flnc_bam/all_samples.flnc.aligned.chrU.bam"
-    shell:
-        "ml samtools;"
-        "samtools view -bh -f 4 {input.bam} > {output.bam}" 
-
-
-# cluster and polish together
-rule isoseq3_cluster:
-    input:
-        "all_samples/flnc_bam/all_samples.flnc.aligned.chr{chr}.bam"
-        #"all_samples/flnc_bam/all_samples.flnc.bam"
-        #"{sample}/isoseq3-refine/{sample}.flnc.bam"
-    params:
-        fasta_gz = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta.gz",
-        bam = "all_samples/isoseq3-cluster/all_samples.chr{chr}.bam"
-        #fasta_gz =  "{sample}/isoseq3-cluster/{sample}.hq.fasta.gz"
-        
-    output:
-        fasta = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta",
-        report = "all_samples/isoseq3-cluster/all_samples.chr{chr}.cluster_report.csv"
-        #fasta =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
-        #report =  "{sample}/isoseq3-cluster/{sample}.polished.cluster_report.csv"
-    shell:
-        "isoseq3 cluster --verbose --use-qvs -j 24 {input} {params.bam};"
-        "gunzip {params.fasta_gz}"
-
-# prepend chrom name to clustered FASTA lines before merging
-rule prepend_chr_name:
-    input:
-         fasta = "all_samples/isoseq3-cluster/all_samples.chr{chr}.hq.fasta",
-         report = "all_samples/isoseq3-cluster/all_samples.chr{chr}.cluster_report.csv",
-    output:
-        fasta =  "all_samples/prepend/all_samples.chr{chr}.hq.prepend.fasta",
-        report = "all_samples/prepend/all_samples.chr{chr}.prepend.cluster_report.csv"
-    params:
-        fasta_script = "scripts/prepend_fasta.awk",
-        report_script = "scripts/prepend_report.awk"
-    shell:
-        "ml bioawk;"
-        "bioawk -c fastx -v x=\"{wildcards.chr}\" -f {params.fasta_script} {input.fasta} > {output.fasta};"
-        "bioawk -F ',' -v x=\"{wildcards.chr}\" -f {params.report_script} {input.report} > {output.report}"
-
-# merge prepended files together
-rule merge_fasta:
-    input:
-        expand("all_samples/prepend/all_samples.chr{chr}.hq.prepend.fasta", chr = chromosomes + ["U"] )
-    output:
-        "all_samples/prepend/all_samples.merged.hq.prepend.fasta"    
-    shell:
-        "cat {input} > {output}"
-
-rule merge_report:
-    input:
-        expand("all_samples/prepend/all_samples.chr{chr}.prepend.cluster_report.csv", chr = chromosomes + ["U"] )
-    output:
-        "all_samples/prepend/all_samples.merged.cluster_report.csv"
-    shell:
-         "ml R/3.6.0; "
-         "Rscript scripts/merge_cluster_reports.R {output}"   
-
-### MINIMAP 
-
-rule minimapIndex:
-    input: referenceFa + ".fa"
-    output: referenceFa + ".mmi"
-    shell:
-        "minimap2 -d {output} {input}" 
-
-# align to genome and sort as SAM file
-rule minimap:
-    input: 
-        fastq = "all_samples/prepend/all_samples.merged.hq.prepend.fasta",
-        #fastq =  "{sample}/isoseq3-cluster/{sample}.hq.fasta",
-        ref = referenceFa + ".fa",
-        index = referenceFa + ".mmi"
-    params: 
-        "-ax splice -t 16 -uf --secondary=no -C5"
-        #config['minimapParams']
-    output: 
-        #sam = "all_samples/minimap/all_samples.hq.sam",
-        #sam_sorted = "all_samples/minimap/all_samples.hq.sorted.sam"
-        sam =  "{sample}/minimap/{sample}.hq.sam",
-        sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam"
-    shell:
-        "minimap2 {params} {input.index} {input.fastq} > {output.sam};"
-        "ml samtools; samtools sort --threads 8 -O SAM {output.sam} > {output.sam_sorted}"
-
+# get bam statistics
 rule samtools:
-    input:  "{sample}/minimap/{sample}.hq.sam"
+    input:  dataCode + "/flnc_bam/all_samples.flnc.aligned.bam"
     output:
-        bam =  "{sample}/minimap/{sample}.sorted.bam",
-        bai =  "{sample}/minimap/{sample}.sorted.bam.bai",
-        flagstat =  "{sample}/qc/{sample}.flagstat.txt",
-        idxstat =  "{sample}/qc/{sample}.idxstat.txt"
+        bam =  dataCode + "/minimap/all_samples.sorted.bam",
+        bai =  dataCode + "/minimap/all_samples.sorted.bam.bai",
+        flagstat =  dataCode + "/qc/all_samples.flagstat.txt",
+        idxstat =  dataCode + "/qc/all_samples.idxstat.txt"
     shell:
         "samtools view -bh {input} | samtools sort > {output.bam}; "
         "samtools index {output.bam};"
         "samtools flagstat {output.bam} > {output.flagstat};"
         "samtools idxstats {output.bam} > {output.idxstat} "
 
-rule fastqc:
-    input: "{sample}/minimap/{sample}.hq.sam"
-    output: "{sample}/qc/{sample}.hq_fastqc.html"
+# make FASTA version of BAM for Cupcake
+rule make_fasta:
+    input: 
+        dataCode + "/flnc_bam/all_samples.flnc.aligned.bam"
+    output:
+        dataCode + "/flnc_bam/all_samples.flnc.aligned.fasta"
     shell:
-        "ml fastqc;"
-        "fastqc --outdir={wildcards.sample}/qc/ --format sam {input}"
+        "ml samtools;"
+        "samtools fasta {input} > {output}"
 
-
+# make SAM version of BAM for Cupcake
+rule make_sam:
+    input:
+        dataCode + "/flnc_bam/all_samples.flnc.aligned.bam"
+    output:
+        dataCode + "/flnc_bam/all_samples.flnc.aligned.sam"
+    shell:
+        "ml samtools;"
+        "samtools view -h {input} > {output}"
 ## Cupcake Tools
 
 # collapse redundant reads
@@ -261,29 +182,30 @@ rule fastqc:
 # CHECK - does cupcake mind if FASTA and cluster_report are gzipped?
 rule cupcake_collapse:
     input:
-        fasta =   "{sample}/prepend/{sample}.merged.hq.prepend.fasta",
-        sam_sorted =  "{sample}/minimap/{sample}.hq.sorted.sam",
-        cluster_report =  "{sample}/prepend/all_samples.merged.cluster_report.csv"
+        fasta = dataCode + "/flnc_bam/all_samples.flnc.aligned.fasta",
+        #fasta =   dataCode + "/prepend/all_samples.merged.hq.prepend.fasta",
+        sam_sorted = dataCode + "/flnc_bam/all_samples.flnc.aligned.sam"
     output:
-         gff = "{sample}/cupcake/{sample}.cupcake.collapsed.gff",
-         fasta = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
-         group = "{sample}/cupcake/{sample}.cupcake.collapsed.group.txt",
-         stat = "{sample}/cupcake/{sample}.cupcake.collapsed.read_stat.txt",
-         #count = "{sample}/cupcake/{sample}.cupcake.collapsed.abundance.txt"
-         #fasta2 = "{sample}/cupcake/{sample}.cupcake.collapsed.rep.fa",
-         #chain_gff = "{sample}/cupcake/chain/cupcake.collapsed.gff",
-         #chain_group = "{sample}/cupcake/chain/cupcake.collapsed.group.txt",
-         #chain_count = "{sample}/cupcake/chain/cupcake.collapsed.abundance.txt" 
+         gff = dataCode + "/cupcake/all_samples.cupcake.collapsed.gff",
+         fasta = dataCode + "/cupcake/all_samples.cupcake.collapsed.rep.fa",
+         #group = dataCode + "/cupcake/all_samples.cupcake.collapsed.group.txt",
+         stat = dataCode + "/cupcake/all_samples.cupcake.collapsed.read_stat.txt",
+         #count = dataCode + "/cupcake/all_samples.cupcake.collapsed.abundance.txt"
+         #fasta2 = dataCode + "/cupcake/all_samples.cupcake.collapsed.rep.fa",
+         #chain_gff = dataCode + "/cupcake/chain/cupcake.collapsed.gff",
+         #chain_group = dataCode + "/cupcake/chain/cupcake.collapsed.group.txt",
+         #chain_count = dataCode + "/cupcake/chain/cupcake.collapsed.abundance.txt" 
 
     params:
-        prefix = "{sample}/cupcake/{sample}.cupcake",
-        prefix_collapsed = "{sample}/cupcake/{sample}.cupcake.collapsed",
+        prefix = dataCode + "/cupcake/all_samples.cupcake",
+        prefix_collapsed = dataCode + "/cupcake/all_samples.cupcake.collapsed",
         cupcake_dir = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake/build/scripts-3.7/"
     shell:
-        "python {params.cupcake_dir}/collapse_isoforms_by_sam.py --input {input.fasta} "
+        #"python {params.cupcake_dir}/collapse_isoforms_by_sam.py --input {input.fasta} "
+        "collapse_isoforms_by_sam.py --input {input.fasta} "
         "-s {input.sam_sorted} -o {params.prefix};"
         # get abundances
-        "python {params.cupcake_dir}/get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report};"
+        #"python {params.cupcake_dir}/get_abundance_post_collapse.py {params.prefix}.collapsed {input.cluster_report};"
         # filter 5' truncated transcripts
         #"filter_away_subset.py {params.prefix}.collapsed ; "
         # collapse again to create groups file
@@ -299,11 +221,11 @@ rule cupcake_collapse:
 ## DEMULTIPLEX
 rule demultiplex_abundances:
     input:
-        fasta = "all_samples/cupcake/all_samples.cupcake.collapsed.rep.fa",
-        flnc_report = "all_samples/flnc_bam/all_samples.merged.flnc_report.csv",
-        read_stat = "all_samples/cupcake/all_samples.cupcake.collapsed.read_stat.txt",
+        fasta = dataCode + "/cupcake/all_samples.cupcake.collapsed.rep.fa",
+        flnc_report = dataCode + "/flnc_bam/all_samples.merged.flnc_report.csv",
+        read_stat = dataCode + "/cupcake/all_samples.cupcake.collapsed.read_stat.txt",
     output:
-        "all_samples/cupcake/all_samples.demux_fl_count.csv"
+        dataCode + "/cupcake/all_samples.demux_fl_count.csv"
     params:
         script = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake/post_isoseq_cluster/demux_isoseq_with_genome.py"
     shell:    
@@ -315,15 +237,15 @@ rule demultiplex_abundances:
 # remove monoexonic transcripts to reduce overhead for SQANTI
 rule filter_missingness:
     input:
-        counts = "all_samples/cupcake/all_samples.demux_fl_count.csv",
-        gff = "all_samples/cupcake/all_samples.cupcake.collapsed.gff"
+        counts = dataCode + "/cupcake/all_samples.demux_fl_count.csv",
+        gff = dataCode + "/cupcake/all_samples.cupcake.collapsed.gff"
     output:
-        counts = "all_samples/cupcake_filtered/all_samples.demux_fl_count_filtered.csv",
-        gff = "all_samples/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf"
+        counts = dataCode + "/cupcake_filtered/all_samples.demux_fl_count_filtered.csv",
+        gff = dataCode + "/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf"
     params:
         script = "scripts/filter_missingness.R",
-        input_prefix = "all_samples/cupcake/all_samples",
-        output_prefix = "all_samples/cupcake_filtered/all_samples",
+        input_prefix = dataCode + "/cupcake/all_samples",
+        output_prefix = dataCode + "/cupcake_filtered/all_samples",
         min_samples = 2, # eventually put in config
         min_reads = 2
     shell:
@@ -334,16 +256,16 @@ rule filter_missingness:
 # classifies each transcript in the GTF
 rule SQANTI_all:
     input:
-        gff = "all_samples/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf",
-        abundance = "all_samples/cupcake_filtered/all_samples.demux_fl_count_filtered.csv"
+        gff = dataCode + "/cupcake_filtered/all_samples.cupcake.collapsed.filtered.gtf",
+        abundance = dataCode + "/cupcake_filtered/all_samples.demux_fl_count_filtered.csv"
     output:
         #"test.txt"
-        fasta = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.fasta",
-        gtf = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.gtf",
-        report = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt"
+        fasta = dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.fasta",
+        gtf = dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.gtf",
+        report = dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt"
     params:
-        sample = "all_samples.cupcake.collapsed.filtered",
-        outDir = "all_samples/SQANTI3/",
+        sample = dataCode + ".cupcake.collapsed.filtered",
+        outDir = dataCode + "/SQANTI3/",
         nCores = 16,
         nChunks = 12,
         software= "/sc/arion/projects/ad-omics/data/software",
@@ -373,14 +295,14 @@ rule SQANTI_all:
 
 rule SQANTI_all_filter:
     input:
-        classification = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
-        fasta = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.fasta",
+        classification = dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
+        fasta = dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.fasta",
         #sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-        gtf = "all_samples/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.gtf"
-        #faa = "all_samples/SQANTI3/all_samples.chained_corrected.faa"
+        gtf = dataCode + "/SQANTI3/all_samples.cupcake.collapsed.filtered_corrected.gtf"
+        #faa = dataCode + "/SQANTI3/all_samples.chained_corrected.faa"
     output:
-        "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
-        "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
+        dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
+        dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
     params:
         python = "/sc/arion/work/$USER/conda/envs/isoseq-pipeline/bin/python",
         software= "/sc/arion/projects/ad-omics/data/software"
@@ -403,15 +325,15 @@ rule SQANTI_all_filter:
 
 rule isoaAnotLite:
     input:
-        classification = "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
-        gtf = "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf",
-        junctions = "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_junctions.txt",
+        classification = dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
+        gtf = dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf",
+        junctions = dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_junctions.txt",
         isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
     output:
-        "all_samples/IsoAnnot/all_samples.filtered_lite_tappAS_annot_from_SQANTI3.gff3"
+        dataCode + "/IsoAnnot/all_samples.filtered_lite_tappAS_annot_from_SQANTI3.gff3"
     params:
         software =  "/sc/arion/projects/ad-omics/data/software",
-        prefix = "all_samples/IsoAnnot/all_samples.filtered_lite"
+        prefix = dataCode + "/IsoAnnot/all_samples.filtered_lite"
     shell:
         "mkdir -p all_samples/IsoAnnot/;"
         "conda activate SQANTI3.env; module purge;"
@@ -454,197 +376,14 @@ rule multiQC:
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        "all_samples/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
+        dataCode + "/SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite.gtf"
     output:
-        gff = "all_samples/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz",
-        index = "all_samples/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz.tbi"
+        gff = dataCode + "/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz",
+        index = dataCode + "/SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz.tbi"
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:
         "{params.gff3sort} {input} | bgzip > {output.gff};"
         "ml tabix;"
         "tabix {output.gff} "
-
-
-# OBSOLETE RULES
-
-# currently isoseq3 and clustering is outsourced to Nancy
-rule symlinkFiles:
-    input: 
-        fasta = sampleFA,
-        report = sampleREP
-    output:
-        expand("{sample}/isoseq3-cluster/{sample}.hq.fasta", sample = samples),
-        expand("{sample}/isoseq3-cluster/{sample}.cluster_report.csv", sample = samples)
-    run:
-        for s in samples:
-            fa_in = metaDF.loc[s]['fasta_path']
-            rep_in = metaDF.loc[s]['cluster_report_path']
-            
-            fa_out = s + "/isoseq3-cluster/" + s + ".hq.fasta"
-            rep_out = s + "/isoseq3-cluster/" + s + ".cluster_report.csv"
-
-            os.makedirs(s + "/isoseq3-cluster/", exist_ok = True)
-
-            if not os.path.exists(fa_out):
-                os.symlink(fa_in, fa_out)   
-            if not os.path.exists(rep_out):
-                os.symlink(rep_in, rep_out)
-
-#
-#### STRINGTIE2
-
-# assemble minimap-aligned reads into transcripts - alternative to cupcake_collapse
-# some monoexon transcripts are given strand of "." - remove them in bioawk
-rule stringtie:
-    input:
-        bam =  "{sample}/minimap/{sample}_sorted.bam"
-    params:
-        gtf = referenceGTF,
-        stringtiePath = "/sc/arion/projects/ad-omics/data/software/stringtie"
-    output:
-        gtf = "{sample}/stringtie/{sample}.stringtie.collapsed.gtf",
-        gff = "{sample}/stringtie/{sample}.stringtie.collapsed.gff"
-    shell:
-        "ml bioawk; "
-        "{params.stringtiePath}/stringtie --rf -G {params.gtf} -L -o {output.gtf} {input.bam};"
-        "gffread -E {output.gtf} -o- | awk \'$7 != \".\"\' > {output.gff}"
-
- 
-rule chain_samples:
-    input:
-        chain_gff = expand("{sample}/cupcake/chain/cupcake.collapsed.gff", sample = samples),
-        chain_config = "all_samples/chain.config.txt"
-    params:
-        n_cores = 4
-    output:
-        gff = "all_samples/all_samples.chained.gff",
-    shell:
-        "chain_samples.py {input.chain_config} count_fl --cpus {params.n_cores}; "
-        "if [ ! -d all_samples/ ]; then mkdir all_samples; fi ;"
-        "mv all_samples.chained* all_samples/;"
-        "rm tmp* "
-
-# collapse again after chaining? experimental
-rule collapse_post_chain:
-    input:
-        gff = "all_samples/all_samples.chained.gff"
-    output:
-        "collapse_isoforms_by_sam.py --input {input.fasta} "
-        "-s {input.sam_sorted} -o {params.prefix};"
-
-
-rule create_chain_config:
-    output:
-        config = "all_samples/chain.config.txt"
-    run:
-        chainSampleRows = []
-        for i in samples:
-            l = "".join(["SAMPLE=", i,";", i, "/cupcake/chain/"])
-            chainSampleRows.append(l)
-        chainFileRows = ["GROUP_FILENAME=cupcake.collapsed.group.txt", \
-                         "COUNT_FILENAME=cupcake.collapsed.abundance.txt", \
-                         "GFF_FILENAME=cupcake.collapsed.gff" ]
-        allRows = chainSampleRows + [""] + chainFileRows    
-        
-        with open(output.config, 'w') as filehandle:
-                for listitem in allRows:
-                    filehandle.write('%s\n' % listitem)
-
-
-#### SQANTI - per-sample if chaining won't work
-
-rule SQANTI:
-    input:
-        #fasta = "{sample}/isoseq3-cluster/{sample}.hq.fasta"
-        gff = "{sample}/{method}/{sample}.{method}.collapsed.filtered.gff"
-    output:
-        report = "{sample}/SQANTI3/{sample}.{method}_classification.txt"
-    params:
-        sample = "{sample}.{method}",
-        outDir = "{sample}/SQANTI3/",
-        python = "/sc/arion/work/$USER/conda/envs/SQANTI.env/bin/python",
-        sqantiPath= "/sc/arion/projects/ad-omics/data/software/SQANTI3",
-        nCores = 12,
-        #abundance = "{sample}/cupcake/{sample}.{method}.abundance.txt",
-        gtf = referenceGTF,
-        genome = referenceFa + ".fa",
-        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
-        intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
-        cage = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
-        polya = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/human.polyA.list.txt"
-    shell:
-        #"export PATH=/sc/arion/projects/ad-omics/data/software/UCSC/:$PATH;"
-        #"module unload gcc;ml R/3.6.0; "
-        "export PYTHONPATH=$PYTHONPATH:/hpc/users/humphj04/pipelines/cDNA_Cupcake/sequence/;"
-        "{params.python} {params.sqantiPath}/sqanti_qc2.py -t {params.nCores} --aligner_choice=minimap2"
-        " --dir {params.outDir} "
-        " --out {params.sample} "
-        " -c {params.junctions} "
-        " --cage_peak {params.cage} --polyA_motif_list {params.polya} -c {params.intropolis}"
-        #" --fl_count {params.abundance}"
-        " --gtf {input.gff} " 
-        " {params.gtf} {params.genome} "
-
-
-# sqanti filter - only works with Cupcake output for now
-rule SQUANTI_filter:
-    input:
-        classification = "{sample}/SQANTI3/{sample}.{method}_classification.txt",
-        fasta = "{sample}/SQANTI3/{sample}.cupcake.collapsed_corrected.fasta",
-        #sam = "{sample}/cupcake/{sample}.renamed_corrected.sam",
-        gtf = "{sample}/SQANTI3/{sample}.cupcake.collapsed_corrected.gtf",
-        faa = "{sample}/SQANTI3/{sample}.cupcake.collapsed_corrected.faa"
-    output:
-        "{sample}/SQANTI3/{sample}_classification.filtered_lite_classification.txt"
-    params:
-        python = "/sc/arion/work/$USER/conda/envs/isoseq-pipeline/bin/python",
-        sqantiPath= "/sc/arion/projects/ad-omics/data/software/SQANTI3"
-    shell:
-        "{params.python} {params.sqantiPath}/sqanti_filter2.py "
-        " --faa {input.faa} " #--sam {input.sam} "
-        " {input.classification} {input.fasta} {input.gtf} "    
-
-## TAMA tools
-
-rule TAMA_collapse:
-    input:
-        sam_sorted = "{sample}/minimap/{sample}.hq.sorted.sam",
-        genome = referenceFa + ".fa"
-    output:
-        bed = "{sample}/TAMA/{sample}.bed",
-        txt = "{sample}/TAMA/{sample}_read.txt"
-    params:
-        script = "/sc/arion/projects/ad-omics/data/software/tama/tama_collapse.py"
-    shell:
-        'conda activate py2bio;'
-        'python {params.script} -s {input.sam_sorted} -f {input.genome} -p {wildcards.sample}/TAMA/{wildcards.sample} -x no_cap -rm low_mem'
-
-
-rule create_TAMA_merge_config:
-    input:
-        expand( "{sample}/TAMA/{sample}.bed", sample = samples)
-    output:
-        config = "TAMA_merge/tama_merge_config.txt"
-    run:
-        tamaMergeRows = []
-        for s in samples:
-            entry = s + "/TAMA/" + s + ".bed\tno_cap\t1,1,1\t" + s
-            tamaMergeRows.append(entry)
-
-        with open(output.config, 'w') as filehandle:
-                for listitem in tamaMergeRows:
-                    filehandle.write('%s\n' % listitem)
-
-rule TAMA_merge:
-    input:
-        config = "TAMA_merge/tama_merge_config.txt"
-    output:
-        "all_samples/TAMA/all_samples_merge.txt"
-    params:
-        script = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
-    shell:
-        'conda activate py2bio;'
-        'python {params.script} -f {input.config} -p all_samples'
-
 

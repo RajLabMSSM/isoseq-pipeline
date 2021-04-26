@@ -17,7 +17,7 @@ genome_code = "hg38"
 
 metadata = config["metadata"]
 
-prefix = os.path.join(out_folder, data_code )
+prefix = os.path.join(out_folder, "run_talon", data_code, data_code )
 
 # read in xlsx metadata to pandas
 meta_df = pd.read_excel(metadata)
@@ -137,26 +137,49 @@ rule run_talon:
                   --o {out_folder}/run_talon/{sample_loc} ")
 
 
+# filter loosely
+rule talon_filter:
+    input:
+        expand(out_folder + "run_talon/{sample}_QC.log", sample = samples),
+        talon_db = prefix + ".db"
+    output:
+        prefix + "_whitelist.txt"
+    params:
+        max_frac_a = 0.5,
+        min_count = 5,
+        min_datasets = 5
+    shell:
+        "talon_filter_transcripts --db {input.talon_db} "
+        " -a {GTF_code} "
+        " --maxFracA={params.max_frac_a} --minCount={params.min_count} --minDatasets={params.min_datasets} "
+        " --o {output}"
+
 # get abundance counts
 rule talon_abundance:
     input:
         expand(out_folder + "run_talon/{sample}_QC.log", sample = samples),
-        talon_db = prefix + ".db"
+        talon_db = prefix + ".db",
+        whitelist = prefix + "_whitelist.txt"
     output:
         prefix + "_talon_abundance.tsv"
     shell:
-        "talon_abundance --db {input.talon_db} -b {genome_code} -a {GTF_code} --o={prefix}"
+        "talon_abundance --db {input.talon_db} "
+        " --whitelist {input.whitelist} "
+        " -b {genome_code} -a {GTF_code} "
+        " --o={prefix}"
         
-
 # create GTF
 rule create_GTF:
     input:
         expand(out_folder + "run_talon/{sample}_QC.log", sample = samples),
-        talon_db = prefix + ".db"
+        talon_db = prefix + ".db",
+        whitelist = prefix + "_whitelist.txt"
     output:
         prefix + "_talon_observedOnly.gtf"
     shell:
-        "talon_create_GTF --db={input.talon_db} -b {genome_code} -a {GTF_code} --o={prefix} --observed"
+        "talon_create_GTF --db={input.talon_db} "
+        " --whitelist {input.whitelist} "
+        " -b {genome_code} -a {GTF_code} --o={prefix} --observed"
     
 # run SQANTI using GTF
 rule SQANTI:

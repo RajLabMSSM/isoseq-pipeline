@@ -19,10 +19,11 @@ metadata_dict = meta_df.set_index("sample").T.to_dict()
 # isoquant specific params
 matching_strategy = "precise"
 model_strategy = "default_ccs"
-isoquant_threads = 1
+isoquant_threads = 8
+
 rule all:
     input: 
-        out_folder + "isoquant/combined_gene_counts.tsv"
+        out_folder + "isoquant/" + data_code + "/combined_gene_counts.tsv"
 
 # full pipeline would have to align BAM files first
 rule align_flnc_bam:
@@ -89,11 +90,11 @@ rule run_isoquant:
     params:
         labels = expand( "{sample}", sample = samples )
     output:
-        out_folder + "isoquant/combined_gene_counts.tsv"
+        out_folder + "isoquant/" + data_code + "/combined_gene_counts.tsv"
     shell:
         "isoquant.py -d pacbio_ccs --polya_trimmed --fl_data --bam_list {input.bam_list} "
-        "--reference {reference_fasta} --genedb {input.db} --output {out_folder}isoquant/ "
+        "--reference {reference_fasta} --genedb {input.db} --output {out_folder}isoquant/{data_code}/ "
         "--labels {params.labels} " 
-        "--sqanti_output --check_canonical --threads {isoquant_threads} " 
+        "--sqanti_output  --threads {isoquant_threads} " 
         "--matching_strategy {matching_strategy} "
         "--model_construction_strategy {model_strategy} "

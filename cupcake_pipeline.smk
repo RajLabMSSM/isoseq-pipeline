@@ -49,7 +49,8 @@ localrules: create_chain_config
 
 rule all:
     input:
-      out_folder + "cupcake/" + data_code + ".cupcake.collapsed.gff"
+        out_folder + "cupcake/" + data_code + "/" + data_code + ".cupcake.collapsed.gff"
+      #out_folder + "cupcake/" + data_code + ".cupcake.collapsed.gff"
         #out_folder + "flnc_bam/all_samples.flnc.aligned.bam",
       #out_folder + "cupcake/" + data_code + ".demux_fl_count.csv"
       #out_folder + "SQANTI3/all_samples.cupcake.collapsed.filtered_classification.txt",
@@ -111,7 +112,7 @@ rule cupcake_collapse:
     input:
         bam = out_folder + "merged_bam/" + data_code + ".flnc.aligned.md.bam"
     output:
-         gff = out_folder + "cupcake/" + data_code + ".cupcake.collapsed.gff",
+         gff = out_folder + "cupcake/" + data_code + "/" + data_code + ".cupcake.collapsed.gff",
          #fasta = out_folder + "cupcake/" + data_code + ".cupcake.collapsed.rep.fa",
          #group = out_folder + "cupcake/" + data_code + ".cupcake.collapsed.group.txt",
          #stat = out_folder + "cupcake/" + data_code + ".cupcake.collapsed.read_stat.txt",
@@ -121,9 +122,9 @@ rule cupcake_collapse:
          #chain_group = out_folder + "cupcake/chain/cupcake.collapsed.group.txt",
          #chain_count = out_folder + "cupcake/chain/cupcake.collapsed.abundance.txt" 
     params:
-        prefix = out_folder + "cupcake/" + data_code + ".cupcake",
-        prefix_collapsed = out_folder + "cupcake/" + data_code + ".cupcake.collapsed",
-        cupcake_dir = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake/build/scripts-3.7/"
+        prefix = out_folder + "cupcake/" + data_code + "/" + data_code + ".cupcake" #,
+        #prefix_collapsed = out_folder + "cupcake/" + data_code + ".cupcake.collapsed",
+        #cupcake_dir = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake/build/scripts-3.7/"
     shell:
         #"python {params.cupcake_dir}/collapse_isoforms_by_sam.py --input {input.fasta} "
         "collapse_isoforms_by_sam.py "

@@ -10,15 +10,21 @@ __default__:
   output: logs/{rule}:{wildcards}.stdout
   error: logs/{rule}:{wildcards}.stderr
   himem: ""
+talon_filter:
+  cores: 1
+  mem: 30000
+  time: 720
+  himem: "-R himem"
 talon_label_reads:
   cores: 8
   mem: 3000
   time: 500
 run_isoquant:
   cores: 8
-  mem: 3000
-  time: 720
-  queue: express
+  mem: 30000
+  time: 100:00
+  queue: long
+  himem: "-R himem"
 run_talon:
   cores: 16
   mem: 8000
@@ -82,9 +88,9 @@ isoseq3_cluster:
 cupcake_collapse:
     cores: 32
     mem: 6000
-    time: '12:00'
+    time: '96:00'
     himem: "-R himem"
-    queue: 'premium'
+    queue: 'long'
 demultiplex_abundances:
     cores: 16
     mem: 3000

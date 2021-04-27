@@ -13,6 +13,7 @@ __default__:
 talon_filter:
   cores: 1
   mem: 30000
+  queue: premium
   time: 720
   himem: "-R himem"
 talon_label_reads:

@@ -15,6 +15,8 @@ pbmm2_threads = "8"
 talon_threads = "16" # for testing
 genome_code = "hg38"
 
+sqanti_threads = "4"
+
 metadata = config["metadata"]
 
 prefix = os.path.join(out_folder, "run_talon", data_code, data_code )
@@ -33,8 +35,9 @@ rule all:
     input:
         expand(out_folder + "{sample}/samtools/{sample}.flagstat.txt", sample = samples),
         prefix + ".db",
-        prefix + "_talon_abundance.tsv",
-        prefix + "_talon_observedOnly.gtf"
+        prefix + "_talon_abundance_filtered.tsv",
+        prefix + "_talon_observedOnly.gtf",
+        prefix + "_SQANTI_classification.txt"
 
 # initialise TALON db
 rule create_db:
@@ -161,7 +164,7 @@ rule talon_abundance:
         talon_db = prefix + ".db",
         whitelist = prefix + "_whitelist.txt"
     output:
-        prefix + "_talon_abundance.tsv"
+        prefix + "_talon_abundance_filtered.tsv"
     shell:
         "talon_abundance --db {input.talon_db} "
         " --whitelist {input.whitelist} "
@@ -175,20 +178,77 @@ rule create_GTF:
         talon_db = prefix + ".db",
         whitelist = prefix + "_whitelist.txt"
     output:
-        prefix + "_talon_observedOnly.gtf"
+        gtf_full = prefix + "_talon_observedOnly.gtf",
+        gtf_clean = prefix + "_talon_clean.gtf"
     shell:
         "talon_create_GTF --db={input.talon_db} "
         " --whitelist {input.whitelist} "
-        " -b {genome_code} -a {GTF_code} --o={prefix} --observed"
+        " -b {genome_code} -a {GTF_code} --o={prefix} --observed;"
+        " gffread -ET {output.gtf_full} > {output.gtf_clean}"
+
+## FILTER MISSINGNESS
+# remove all transcripts with greater than X% missingness
+# currently - present in at least 2 samples
+# remove monoexonic transcripts to reduce overhead for SQANTI
+# input must be simple GFF - long GTF lines break rtracklayer
+rule filter_missingness:
+    input:
+        counts = prefix + "_talon_abundance_filtered.tsv",
+        gtf = prefix + "_talon_clean.gtf"
+    output:
+        counts = prefix + "_filtered_strong.csv",
+        gtf = prefix + "_filtered_strong.gtf"
+    params:
+        script = "scripts/filter_missingness.R",
+        input_prefix = prefix,
+        output_prefix = prefix,
+        min_samples = 5, # eventually put in config
+        min_reads = 5
+    shell:
+        "ml R/3.6.0;"
+        "Rscript {params.script} --counts {input.counts} --gff {input.gtf} --prefix {params.output_prefix} --min_samples {params.min_samples} --min_reads {params.min_reads} --remove_monoexons"
+
     
-# run SQANTI using GTF
+# run SQANTI using filtered GTF
 rule SQANTI:
     input:
-         prefix + "_talon_observedOnly.gtf"
+         gtf = prefix + "_filtered_strong.gtf",
+         abundance = prefix + "_filtered_strong.csv"
     output:
-         prefix + "_classifications.tsv"
+         out = prefix + "_SQANTI_classification.txt",
+         gtf = prefix  + "_SQANTI_corrected.gtf",
+         fasta = prefix + "_SQANTI_corrected.fasta" 
+    params:
+        sample = data_code + "_SQANTI" ,
+        outDir = out_folder + "run_talon/" + data_code + "/",
+        nCores = sqanti_threads,
+        nChunks = 12,
+        software= "/sc/arion/projects/ad-omics/data/software",
+        #junctions = junctionArgs,
+        #junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
+        gtf = GTF,
+        #genome = referenceFa + ".fa",
+        intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
+        cage = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
+        polya = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/human.polyA.list.txt",
+        isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
     shell:
-        ""
+        "conda activate SQANTI3.env; module purge;"
+        "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
+        "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
+        "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
+        " --dir {params.outDir} "
+        " --out {params.sample} "
+        #" -c {params.junctions} "
+        " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
+        "--skipORF " # ORF finding is slow, can skip if testing
+        #"-c {params.intropolis}"
+        " --fl_count {input.abundance}"
+        " --gtf {input.gtf} "
+        #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"
+        " {params.gtf} {genome} "
+
+
 
 # filter SQANTI output
 

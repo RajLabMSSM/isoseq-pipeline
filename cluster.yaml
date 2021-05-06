@@ -26,10 +26,10 @@ run_isoquant:
   time: 100:00
   queue: long
   himem: "-R himem"
-run_talon:
-  cores: 16
-  mem: 8000
-  time: 168:00
+run_talon_simul:
+  cores: 32
+  mem: 6000
+  time: 96:00
   queue: long
   himem: "-R himem"
 merge_flnc_bams:

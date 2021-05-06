@@ -11,7 +11,7 @@ awk -v threshold=$threshold '
     $1 !~ /@/ && $6 ~ /N/ {
         # freqA is always final tag
         x = split($NF, a, ":");
-        if(a[3] < threshold){
+        if(a[3] <= threshold){
             print($0)
         } 
     }

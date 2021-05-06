@@ -12,12 +12,15 @@ GTF = config["ref_gtf"]
 GTF_code = config["gtf_code"]
 
 pbmm2_threads = "8"
-talon_threads = "16" # for testing
+talon_threads = "32" # for testing
 genome_code = "hg38"
 
 sqanti_threads = "4"
 
 metadata = config["metadata"]
+
+# hard code for now
+data_code = "all_samples"
 
 prefix = os.path.join(out_folder, "run_talon", data_code, data_code )
 
@@ -34,10 +37,11 @@ localrules: write_config
 rule all:
     input:
         expand(out_folder + "{sample}/samtools/{sample}.flagstat.txt", sample = samples),
-        prefix + ".db",
-        prefix + "_talon_abundance_filtered.tsv",
-        prefix + "_talon_observedOnly.gtf",
-        prefix + "_SQANTI_classification.txt"
+        out_folder + "/run_talon/all_samples/all_samples_read_annot.tsv"#,
+        #prefix + ".db",
+        #prefix + "_talon_abundance_filtered.tsv",
+        #prefix + "_talon_observedOnly.gtf",
+        #prefix + "_SQANTI_classification.txt"
 
 # initialise TALON db
 rule create_db:
@@ -106,12 +110,25 @@ rule filter_reads:
     output:
         out_folder + "{sample}/filtered/{sample}.aligned.md.labelled.filtered.sam" 
     params:
-        fA_threshold = 0.7 # permissive threshold, can reduce later
+        fA_threshold = 1 # permissive threshold, can reduce later
     shell:
         "sh scripts/filter_sam.awk {input} {output} {params.fA_threshold}"
 
+
+rule run_talon_simul:
+    input:
+        config_csv = prefix + "_talon_config.csv",
+        talon_db = prefix + ".db" 
+    output:
+        out_folder + "/run_talon/all_samples/all_samples_read_annot.tsv"
+    run:
+        shell("conda activate talon; talon --f {input.config_csv} --db {input.talon_db} \
+                  --build {genome_code} --threads {talon_threads} \
+                  --o {out_folder}/run_talon/all_samples/all_samples")
+         #expand(out_folder + "run_talon/{sample}_QC.log", sample = samples)
+
 # run TALON successively for each file
-rule run_talon:
+rule run_talon_series:
     input:
         sams = expand( out_folder + "{sample}/filtered/{sample}.aligned.md.labelled.filtered.sam", sample = samples),
         talon_db = prefix + ".db"
@@ -148,7 +165,7 @@ rule talon_filter:
     output:
         prefix + "_whitelist.txt"
     params:
-        max_frac_a = 0.5,
+        max_frac_a = 0.6,
         min_count = 5,
         min_datasets = 5
     shell:

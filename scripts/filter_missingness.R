@@ -56,11 +56,21 @@ df <- vroom::vroom(counts_file)
     df <- df[,11:ncol(df) ]
 
 }
-
+# CUPCAKE
 if( grepl("collapsed", counts_file) ){
 
 df <- column_to_rownames(df, var = "id")
 }
+# BAMBU
+if( grepl("counts_transcript.txt", counts_file) ){
+df$GENEID <- NULL
+df <- column_to_rownames(df, var = "TXNAME")
+# round to integers
+df <- round(df)
+
+}
+
+
 # add parameter min_samples for min_samples filtering
 # if min_samples between 0 and <1 - keep transcripts present in min_samples * total sample size
 # if min_samples = 1 or greater - keep transcripts present in at least min_samples samples
@@ -88,6 +98,7 @@ save.image("debug.RData")
 clean_gff <- gff[gff$transcript_id %in% row.names(clean)]
 stopifnot(length(clean_gff) > 0 )
 
+
 if( remove_monoexons == TRUE){
     message(" * removing mono-exonic transcripts")
     tx_tally <- clean_gff %>% as.data.frame()  %>% group_by(transcript_id) %>% summarise(n_tx = n() )
@@ -103,6 +114,12 @@ if( remove_monoexons == TRUE){
     
 }    
 
+
+# remove transcripts without assigned strand - found in small number in Bambu GTF
+message( paste0(" * removing ", length( clean_gff[strand(clean_gff) == "*" ] ), " transcripts with ambiguous stranding" ) )
+clean_gff <- clean_gff[ strand(clean_gff) != "*" ]
+
+clean <- clean[ clean_gff$transcript_id, ]
 
 message(" * writing filtered counts")
 

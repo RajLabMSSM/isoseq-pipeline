@@ -20,6 +20,18 @@ talon_label_reads:
   cores: 8
   mem: 3000
   time: 500
+cupcake_collapse:
+    cores: 8
+    mem: 24000
+    time: '72:00'
+    queue: premium
+    himem: "-R himem"
+run_bambu:
+  cores: 8
+  mem: 24000
+  time: 72:00
+  queue: premium
+  himem: "-R himem"
 run_isoquant:
   cores: 8
   mem: 30000
@@ -27,10 +39,10 @@ run_isoquant:
   queue: long
   himem: "-R himem"
 run_talon_simul:
-  cores: 32
-  mem: 6000
-  time: 96:00
-  queue: long
+  cores: 8
+  mem: 24000
+  time: 72:00
+  queue: premium
   himem: "-R himem"
 merge_flnc_bams:
   cores: 1
@@ -52,7 +64,7 @@ minimap:
 SQANTI_all:
     time: 720
     mem: 3000
-    cores: 16
+    cores: 8
 TAMA_collapse:
     cores: 16
     mem: 3000
@@ -86,12 +98,6 @@ isoseq3_cluster:
    mem: 3000
    time: 2880
    #himem: "-R himem"
-cupcake_collapse:
-    cores: 32
-    mem: 6000
-    time: '96:00'
-    himem: "-R himem"
-    queue: 'long'
 demultiplex_abundances:
     cores: 16
     mem: 3000

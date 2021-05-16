@@ -37,7 +37,7 @@ genome = ref_genome + ".fa"
 
 ref_gtf = config['ref_gtf']
 
-cupcake_cores = 8
+cupcake_cores = 16
 # short read junctions
 #junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
 #junctions =  glob.glob(junctionFolder + "/*SJ.out.tab")

@@ -21,9 +21,9 @@ talon_label_reads:
   mem: 3000
   time: 500
 cupcake_collapse:
-    cores: 8
+    cores: 16
     mem: 24000
-    time: '72:00'
+    time: '144:00'
     queue: premium
     himem: "-R himem"
 run_bambu:

@@ -15,18 +15,19 @@ import glob
 metadata = config['metadata']
 
 reflat_file =  "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.primary_assembly.annotation.reflat"
+genes_file = "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf.genes"
 
 # file either TSV or XLSX
 if ".tsv" in metadata:
-    metaDF = pd.read_csv(metadata, sep = '\t')
+    meta_df = pd.read_csv(metadata, sep = '\t')
 if ".xlsx" in metadata:
-    metaDF = pd.read_excel(metadata)
+    meta_df = pd.read_excel(metadata)
 
-samples = metaDF['sample']
-sampleFA = metaDF['fasta_path']
-sampleREP = metaDF['cluster_report_path']
+samples = meta_df['sample']
+sampleFA = meta_df['fasta_path']
+sampleREP = meta_df['cluster_report_path']
 
-metaDF = metaDF.set_index("sample")
+metadata_dict = meta_df.set_index("sample").T.to_dict()
 
 #print(samples)
 #rawFolder = config['rawFolder']
@@ -39,6 +40,7 @@ genome = ref_genome + ".fa"
 
 ref_gtf = config['ref_gtf']
 
+pbmm2_threads = "8"
 #chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
 
 rule all:
@@ -53,9 +55,18 @@ rule all:
       #out_folder + "SQANTI3_filtered/all_samples.filtered.sorted.gtf.gz", 
       #out_folder + "SQANTI3_filtered/all_samples.cupcake.collapsed.filtered_classification.filtered_lite_classification.txt",
 
+rule create_index:
+    input:
+        genome
+    output:
+        mmi
+    shell:
+        "pbmm2 index {input} {output}"
 # PBMM2 alignment
 # # add MD flag to reads for TALON
 rule align_flnc_bam:
+    input:
+        mmi
     output:
         bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
     run:
@@ -82,7 +93,7 @@ rule merge_flnc_bams:
 # QC
 rule rnaseqc:
     input:
-        geneGTF = ref_gtf + ".genes",
+        geneGTF = genes_file, #ref_gtf + ".genes",
         bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
     params:
         out =  out_folder + "{sample}/qc/"

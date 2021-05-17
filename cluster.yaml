@@ -61,7 +61,7 @@ minimap:
     cores: 16
     mem: 3000
     time: 360
-SQANTI_all:
+SQANTI:
     time: 720
     mem: 3000
     cores: 8

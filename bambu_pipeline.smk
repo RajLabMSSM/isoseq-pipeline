@@ -37,14 +37,20 @@ td_prefix = out_folder + "bambu/TransDecode/" + data_code
 td_out = out_folder + "bambu/TransDecode/" 
 td_folder = "/sc/arion/projects/ad-omics/data/software/TransDecoder-v5.5.0/"
 
+suppa_prefix = out_folder + "bambu/SUPPA/" + data_code
+
+junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
+
 rule all:
     input:
         prefix + "_extended_annotations.gtf",
         sqanti_prefix + "_classification.txt",
-        filter_prefix + "_miss_sqanti.sorted.gtf.gz",
+        #filter_prefix + "_miss_sqanti.sorted.gtf.gz",
+        #expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.gtf", td_prefix + ".transdecoder.genome.gff3" ] ),
         cpat_prefix + ".ORF_seqs.fa",
-        cds_gff = td_prefix + ".transdecoder.genome.gff3"
-
+        expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
+        suppa_prefix + ".all_suppa_events.ioe",
+        suppa_prefix + "_events.psi"
 rule create_annotation:
     input: 
         gtf = ref_gtf
@@ -91,7 +97,7 @@ rule filter_missingness:
         "Rscript {params.script} --matrix {input.counts} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --min_reads {params.min_reads} --remove_monoexons --tpm"
 
 # run SQANTI using filtered GTF
-rule SQANTI_all:
+rule SQANTI:
     input:
          gtf = miss_prefix + "_miss.gtf",
          abundance = miss_prefix + "_miss_counts.csv"
@@ -107,7 +113,7 @@ rule SQANTI_all:
         nChunks = 8,
         software= "/sc/arion/projects/ad-omics/data/software",
         #junctions = junctionArgs,
-        #junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
+        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
         gtf = ref_gtf,
         #genome = referenceFa + ".fa",
         intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
@@ -121,9 +127,9 @@ rule SQANTI_all:
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        #" -c {params.junctions} "
+        " -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
-        "--skipORF " # ORF finding is slow, can skip if testing
+        #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"
         #" --fl_count {input.abundance}"
         " --gtf {input.gtf} "
@@ -152,10 +158,10 @@ rule filter_sqanti:
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        filter_prefix + "_miss_sqanti.gtf"
+        "{gff}"
     output:
-        gtf = filter_prefix + "_miss_sqanti.sorted.gtf.gz",
-        index = filter_prefix + "_miss_sqanti.sorted.gtf.gz.tbi"
+        gtf = "{gff}.sorted.gtf.gz",
+        index = "{gff}.sorted.gtf.gz.tbi"
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:
@@ -179,13 +185,54 @@ rule TransDecoder:
         fasta = filter_prefix + "_miss_sqanti.fasta",
         gtf = filter_prefix + "_miss_sqanti.gtf"
     output:
-        td_gff = td_prefix + ".transdecoder.gff3",
+        td_gff = td_out + "longest_orfs.gff3",
         gff = td_prefix + "_miss_sqanti.gff3",
         cds_gff = td_prefix + ".transdecoder.genome.gff3"
     shell:
         "conda activate isoseq-pipeline;"
         "{td_folder}/util/gtf_to_alignment_gff3.pl {input.gtf} > {output.gff};"
-        "{td_folder}/TransDecoder.LongOrfs -t {input.fasta};"
-        "mv *.transdecoder_dir/* {td_folder} ; "
+        "{td_folder}/TransDecoder.LongOrfs -S -t {input.fasta};"
+        "mv *.transdecoder_dir/* {td_out} ; "
         "{td_folder}/util/cdna_alignment_orf_to_genome_orf.pl "
-        "   {output.td_gff} {output.gff} {input.fasta} > {output.cds_gff}"
+        "   {output.td_gff} {output.gff} {input.fasta} > {output.cds_gff};"
+        "rm -r *.transdecoder_dir*; rm pipeliner*;"
+
+# get AS events from GTF 
+rule SUPPA_events:
+    input:
+        filter_prefix + "_miss_sqanti.gtf"
+    output:
+        events = expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
+        total = suppa_prefix + ".all_suppa_events.ioe"
+    params:
+        prefix = suppa_prefix + ".events"
+    shell:
+        "conda activate isoseq-pipeline;"
+        "suppa.py generateEvents -i {input} -o {params.prefix} -e SE SS MX RI FL -f ioe --pool-genes;"
+        " awk 'FNR==1 && NR!=1 {{ while (/^<header>/) getline; }} 1 {{print}}' {output.events} > {output.total}"
+
+# convert TPM
+rule SUPPA_convert_TPM:
+    input:
+        filter_prefix + "_miss_sqanti_tpm.csv"
+    output:
+        suppa_prefix + "_suppa_tpm.tsv"
+    params:
+        script = "scripts/convert_tpm_for_suppa.R"
+    shell:
+        "ml R/3.6.0;"
+        "Rscript {params.script} -i {input} -o {output}"
+
+# quantify PSI 
+rule SUPPA_quantify:
+    input:
+        events = suppa_prefix + ".all_suppa_events.ioe",
+        tpm = suppa_prefix + "_suppa_tpm.tsv"
+    output:
+        suppa_prefix + "_events.psi"
+    params:
+        prefix = suppa_prefix + "_events"
+    shell:
+        "conda activate isoseq-pipeline;"
+        "suppa.py psiPerEvent -i {input.events} -e {input.tpm} -o {params.prefix}"
+        

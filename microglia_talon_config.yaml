@@ -5,15 +5,17 @@ metadata:
         #"/sc/arion/projects/als-omics/microglia_isoseq/test_isoseq_metadata.xlsx"
 ref_genome:
         # omit the .fa
-        "/sc/arion/projects/ad-omics/data/references/hg38_reference/hg38"
+        #"/sc/arion/projects/ad-omics/data/references/hg38_reference/hg38"
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome" 
 ref_gtf:
         # cannot be gzipped
-        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf"
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.primary_assembly.annotation.gtf"
+        #"/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf"
 genome_code:
-        "hg38"
+        "GRCh38_primary"
 gtf_code:
-        "GENCODE_v30"
+        "GENCODE_v38"
 out_folder:
-        "TALON/"
+        "results/"
 
 

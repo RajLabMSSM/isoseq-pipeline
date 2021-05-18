@@ -46,11 +46,13 @@ rule all:
         prefix + "_extended_annotations.gtf",
         sqanti_prefix + "_classification.txt",
         #filter_prefix + "_miss_sqanti.sorted.gtf.gz",
-        #expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.gtf", td_prefix + ".transdecoder.genome.gff3" ] ),
+        expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.cds.gtf"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
         cpat_prefix + ".ORF_seqs.fa",
         expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
         suppa_prefix + ".all_suppa_events.ioe",
-        suppa_prefix + "_events.psi"
+        suppa_prefix + "_events.psi",
+        td_prefix + ".transdecoder.genome.gff3"
+
 rule create_annotation:
     input: 
         gtf = ref_gtf
@@ -141,19 +143,19 @@ rule filter_sqanti:
     input:
         counts = miss_prefix + "_miss_counts.csv",
         tpm = miss_prefix + "_miss_tpm.csv",
-        gtf = miss_prefix + "_miss.gtf",
+        gff = sqanti_prefix + "_corrected.gtf.cds.gff",
         sqanti = sqanti_prefix + "_classification.txt",
         fasta = sqanti_prefix + "_corrected.fasta"
     output:
         counts = filter_prefix + "_miss_sqanti_counts.csv",
         tpm = filter_prefix + "_miss_sqanti_tpm.csv",
-        gtf = filter_prefix + "_miss_sqanti.gtf",
+        gff = filter_prefix + "_miss_sqanti.cds.gtf",
         sqanti = filter_prefix + "_miss_sqanti_classification.tsv",
         fasta =  filter_prefix + "_miss_sqanti.fasta"
     params:
         script = "scripts/filter_sqanti.R"
     shell:
-        "Rscript {params.script} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta}" 
+        "Rscript {params.script} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}" 
 
 # sort and tabix index final GFF
 rule indexGFF:
@@ -183,7 +185,7 @@ rule cpat:
 rule TransDecoder:
     input:
         fasta = filter_prefix + "_miss_sqanti.fasta",
-        gtf = filter_prefix + "_miss_sqanti.gtf"
+        gtf = filter_prefix + "_miss_sqanti.cds.gtf"
     output:
         td_gff = td_out + "longest_orfs.gff3",
         gff = td_prefix + "_miss_sqanti.gff3",
@@ -200,7 +202,7 @@ rule TransDecoder:
 # get AS events from GTF 
 rule SUPPA_events:
     input:
-        filter_prefix + "_miss_sqanti.gtf"
+        filter_prefix + "_miss_sqanti.cds.gtf"
     output:
         events = expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
         total = suppa_prefix + ".all_suppa_events.ioe"

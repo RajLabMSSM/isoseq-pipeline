@@ -3,6 +3,7 @@ library(optparse)
 option_list <- list(
     make_option(c('--sqanti', '-s' ), help = "the SQANTI classifications", default = ""),
     make_option(c('--fasta', '-f' ), help = "the FASTA sequences", default = ""),
+    make_option(c('--gff', '-g'), help = "the CDS GFF file from SQANTI", default = ""),
     make_option(c('--input', '-i'), help = "the prefix to the input files", default = ""),
     make_option(c('--output', '-o'), help = "the prefix to the output files", default = "")
 )
@@ -17,17 +18,17 @@ fasta_file <- opt$fasta
 
 counts_file <- paste0(input, "_miss_counts.csv")
 tpm_file <- paste0(input, "_miss_tpm.csv")
-gtf_file <- paste0(input, "_miss.gtf")
+gff_file <- opt$gff
 
 stopifnot(file.exists(counts_file) )
-stopifnot(file.exists(gtf_file) )
+stopifnot(file.exists(gff_file) )
 stopifnot(file.exists(sqanti_file))
 
 
 sqanti_out <- paste0(output, "_miss_sqanti_classification.tsv")
 counts_out <- paste0(output, "_miss_sqanti_counts.csv")
 tpm_out <- paste0(output, "_miss_sqanti_tpm.csv")
-gtf_out <- paste0(output, "_miss_sqanti.gtf")
+gff_out <- paste0(output, "_miss_sqanti.cds.gff")
 fasta_out <- paste0(output, "_miss_sqanti.fasta")
 
 suppressPackageStartupMessages(library(rtracklayer))
@@ -68,7 +69,7 @@ pre$rc_score <- calculate_rc_score(pre$seq_A_downstream_TTS)
 # read in counts, TPM and GTF
 counts <- read_csv(counts_file)
 tpm <- read_csv(tpm_file)
-gtf <- import(gtf_file, format = "GTF")
+gff <- import(gff_file, format = "GFF")
 
 # filter transcripts using SQANTI settings
 fsm_polya <- 
@@ -81,21 +82,33 @@ post <- pre %>%
   mutate( filter_pass = case_when(
     structural_category == "full splice match" ~ TRUE,
     structural_category != "full splice match" & 
-      RTS_stage == FALSE &
+      RTS_stage == FALSE & # no RT-switching junction
+      min_sample_cov >= 5 & min_cov >= 50 & # each junction supported by at least 5 reads in at least 10 short read samples.
       ( 
-        (N_A_downstream_TTS < 6 & perc_A_downstream_TTS < 60 & rc_score <= 15) |
-        fsm_TTS_match == TRUE
+        fsm_TTS_match == TRUE | # has an annotated TTS
+        (N_A_downstream_TTS < 6 & perc_A_downstream_TTS < 60 & rc_score <= 15) # or if not, TTS is low A content
       ) ~ TRUE,
     TRUE ~ FALSE
   ))
 
 
 post <- filter(post, filter_pass == TRUE)
+message( " * filtering transcripts based on SQANTI annotation" )
+message( " * kept ", nrow(post), " transcripts!" )
+
+reasons <- post %>%
+  filter(filter_pass == FALSE) %>%
+  transmute( isoform, type = structural_category, RTS = RTS_stage == TRUE,
+          coverage = min_sample_cov < 5 | min_cov < 50 | is.na(min_sample_cov) | is.na(min_cov),
+          N_A = N_A_downstream_TTS >= 6,
+          perc_A = perc_A_downstream_TTS >= 60,
+          rc = rc_score > 15)
+
 
 # filter output files
 counts <- counts[ counts$id %in% post$isoform,]
 tpm <- tpm[ tpm$id %in% post$isoform,] 
-gtf <- gtf[ gtf$transcript_id %in% post$isoform ]
+gff <- gff[ gff$transcript_id %in% post$isoform ]
 
 # read in FASTA and filter
 message(" * reading FASTA")
@@ -112,7 +125,7 @@ message( " * writing to ", counts_out )
 write_csv(counts, file = counts_out)
 message(" * writing to ", tpm_out)
 write_csv(tpm, file = tpm_out)
-message(" * writing to ", gtf_out)
-export(gtf, con = gtf_out, format = "GTF")
+message(" * writing to ", gff_out)
+export(gff, con = gff_out, format = "GTF")
 message(" * writing to ", fasta_out )
 writeXStringSet(fasta, fasta_out)

@@ -28,7 +28,7 @@ stopifnot(file.exists(sqanti_file))
 sqanti_out <- paste0(output, "_miss_sqanti_classification.tsv")
 counts_out <- paste0(output, "_miss_sqanti_counts.csv")
 tpm_out <- paste0(output, "_miss_sqanti_tpm.csv")
-gff_out <- paste0(output, "_miss_sqanti.cds.gff")
+gff_out <- paste0(output, "_miss_sqanti.cds.gtf")
 fasta_out <- paste0(output, "_miss_sqanti.fasta")
 
 suppressPackageStartupMessages(library(rtracklayer))
@@ -72,11 +72,12 @@ tpm <- read_csv(tpm_file)
 gff <- import(gff_file, format = "GFF")
 
 # filter transcripts using SQANTI settings
-fsm_polya <- 
-  filter(pre, structural_category == "full splice match" ) %>% dplyr::select(associated_gene, seq_A_downstream_TTS) %>%
-  inner_join(pre)
+# now done using diff_to_gene_TTS
+#fsm_polya <- 
+#  filter(pre, structural_category == "full splice match" ) %>% dplyr::select(associated_gene, seq_A_downstream_TTS) %>%
+#  inner_join(pre)
 
-pre$fsm_TTS_match <- pre$isoform %in% fsm_polya$isoform
+#pre$fsm_TTS_match <- pre$isoform %in% fsm_polya$isoform
 
 post <- pre %>% 
   mutate( filter_pass = case_when(
@@ -85,7 +86,8 @@ post <- pre %>%
       RTS_stage == FALSE & # no RT-switching junction
       min_sample_cov >= 5 & min_cov >= 50 & # each junction supported by at least 5 reads in at least 10 short read samples.
       ( 
-        fsm_TTS_match == TRUE | # has an annotated TTS
+        diff_to_gene_TTS == 0 | # has an annotated TTS - in GENCODE v30
+        #fsm_TTS_match == TRUE | # has an annotated TTS
         (N_A_downstream_TTS < 6 & perc_A_downstream_TTS < 60 & rc_score <= 15) # or if not, TTS is low A content
       ) ~ TRUE,
     TRUE ~ FALSE

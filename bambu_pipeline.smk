@@ -46,11 +46,11 @@ rule all:
         prefix + "_extended_annotations.gtf",
         sqanti_prefix + "_classification.txt",
         #filter_prefix + "_miss_sqanti.sorted.gtf.gz",
-        expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.cds.gtf"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
+        expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
         cpat_prefix + ".ORF_seqs.fa",
         expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
         suppa_prefix + ".all_suppa_events.ioe",
-        suppa_prefix + "_events.psi",
+        suppa_prefix + "_events.psi.gz",
         td_prefix + ".transdecoder.genome.gff3"
 
 rule create_annotation:
@@ -231,10 +231,12 @@ rule SUPPA_quantify:
         events = suppa_prefix + ".all_suppa_events.ioe",
         tpm = suppa_prefix + "_suppa_tpm.tsv"
     output:
-        suppa_prefix + "_events.psi"
+        suppa_prefix + "_events.psi.gz"
     params:
         prefix = suppa_prefix + "_events"
     shell:
         "conda activate isoseq-pipeline;"
-        "suppa.py psiPerEvent -i {input.events} -e {input.tpm} -o {params.prefix}"
+        "suppa.py psiPerEvent -i {input.events} -e {input.tpm} -o {params.prefix};"
+        "gzip {suppa_prefix}_events.psi"
         
+

@@ -179,8 +179,8 @@ rule cpat:
         cpat_prefix + ".ORF_seqs.fa"
     shell:
         "conda activate isoseq-pipeline;"
-        "cpat.py -x {cpat_folder}/Human_Hexamer.tsv -d {cpat_folder}/Human_logitModel.RData --top-orf=5 -g {input.fasta} -o {cpat_prefix}"
-
+        "cpat.py -x {cpat_folder}/Human_Hexamer.tsv -d {cpat_folder}/Human_logitModel.RData --top-orf=5 -g {input.fasta} -o {cpat_prefix};"
+        "mv CPAT_run_info.log {cpat_folder}"
 # also TransDecoder
 rule TransDecoder:
     input:

@@ -3,7 +3,8 @@
 # collapse with Cupcake
 # demultiplex to get transcript counts
 
-#cupcake_path = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake"
+cupcake = "/sc/arion/projects/ad-omics/data/software/cDNA_Cupcake"
+sqanti = "/sc/arion/projects/ad-omics/data/software/SQANTI3"
 
 shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate isoseq-pipeline; ')
 #shell.prefix('export PS1="";source activate isoseq-pipeline;ml R/3.6.0;')
@@ -45,7 +46,7 @@ barcode_design = config['barcode_design']
 mmi = ref_genome + ".mmi"
 genome = ref_genome + ".fa"
 
-ref_gtf = config['ref_gtf']
+gtf = config['ref_gtf']
 
 cupcake_cores = 16
 # short read junctions
@@ -57,11 +58,12 @@ cupcake_cores = 16
 
 rule all:
     input:
-        expand(out_folder + "pbmm2/" + "{sample}.bam", sample = samples),
-        expand(out_folder + "dedup/" + "{sample}.dedup.info.csv", sample = samples),
-        expand(out_folder + "lima/" + "{sample}.aligned.bam", sample = samples),
-        expand(out_folder + "tag/" + "{sample}.barcodes.txt", sample = samples)
-
+        #expand(out_folder + "pbmm2/" + "{sample}.bam", sample = samples),
+        #expand(out_folder + "dedup/" + "{sample}.dedup.info.csv", sample = samples),
+        #expand(out_folder + "lima/" + "{sample}.aligned.bam", sample = samples),
+        #expand(out_folder + "tag/" + "{sample}.barcodes.txt", sample = samples),
+        #expand(out_folder + "cupcake/" + "{sample}.collapsed.gff", sample = samples),
+        expand(out_folder + "collate/" + "{sample}.corrected.csv", sample = samples)
         #out_folder + "cupcake/" + data_code + ".cupcake.collapsed.gff"
         #out_folder + "flnc_bam/all_samples.flnc.aligned.bam",
       #out_folder + "cupcake/" + data_code + ".demux_fl_count.csv"
@@ -98,7 +100,7 @@ rule write_barcodes:
     output:
         out_folder + "tag/" + "{sample}.barcodes.txt"
     shell:
-        "samtools view {input} | awk '{{x=$(NF - 2);gsub(\"XC:Z:\",\"\",x); print x }}' > {output}
+        "samtools view {input} | awk \'{{x=$(NF - 2);gsub(\"XC:Z:\",\"\",x); print x }}\' > {output}"
 
 rule refine:
     input:
@@ -132,16 +134,6 @@ rule make_dedup_csv:
         "python {params.script} ;"
         "mv dedup.info.csv {wildcards.sample}.dedup.info.csv"
 
-rule align_lima:
-    input:
-        bam = out_folder + "lima/" + "{sample}.5p--3p.bam"
-    output:
-        bam = out_folder + "lima/" + "{sample}.aligned.bam"
-    run:
-        shell("pbmm2 align --sort -j {pbmm2_threads} --sort-threads 4 -m 3G --preset=ISOSEQ \
-        --log-level INFO --unmapped {mmi} {input.bam} | \
-        samtools calmd -b - {genome} > {output.bam}")
-
 rule align:
     input:
         bam = out_folder + "dedup/" + "{sample}.bam"
@@ -152,4 +144,55 @@ rule align:
         --log-level INFO --unmapped {mmi} {input.bam} | \
         samtools calmd -b - {genome} > {output.bam}")
         shell("samtools index {output.bam}")
+
+rule cupcake:
+    input:
+        bam = out_folder + "pbmm2/" + "{sample}.bam"
+    output:
+        gff = out_folder + "cupcake/" + "{sample}.collapsed.gff",
+        counts = out_folder + "cupcake/" + "{sample}.collapsed.abundance.txt",
+        group = out_folder + "cupcake/" + "{sample}.collapsed.group.txt"
+    params:
+        prefix = out_folder + "cupcake/" + "{sample}"
+    shell:
+        "collapse_isoforms_by_sam.py -b {input}"
+        " -c 0.99 -i 0.95 "
+        " --gen_mol_count "
+        " -o {params.prefix}"
+
+# annotate transcripts
+rule SQANTI:
+    input:
+        gff = out_folder + "cupcake/" + "{sample}.collapsed.gff",
+        counts = out_folder + "cupcake/" + "{sample}.collapsed.abundance.txt"
+    output:
+        out_folder + "sqanti/" + "{sample}.collapsed_classification.txt"
+    shell:
+        "conda activate SQANTI3.env; module purge;"
+        "export PYTHONPATH=$PYTHONPATH:{cupcake}/sequence;"
+        "export PYTHONPATH=$PYTHONPATH:{cupcake};"
+        "ml R/4.0.3;"
+        "python {sqanti}/sqanti3_qc.py --gtf {input.gff} {gtf} {genome} "
+        " --fl_count {input.counts} "
+
+# bring together sqanti annotation, and deduplicated counts
+rule collate:
+    input:
+        sqanti = out_folder + "sqanti/" + "{sample}.collapsed_classification.txt",
+        group = out_folder + "cupcake/" + "{sample}.collapsed.group.txt",
+        dedup = out_folder + "dedup/" + "{sample}.dedup.info.csv",
+    output:
+        out_folder + "collate/" + "{sample}.annotated.csv" 
+    shell:
+        "python {cupcake}/singlecell/collate_FLNC_gene_info.py "
+        "{input.group} {input.dedup} {input.sqanti} {output} "
+
+# some kind of barcode error correction
+rule barcode_correct:
+    input:
+        out_folder + "collate/" + "{sample}.annotated.csv"
+    output:
+        out_folder + "collate/" + "{sample}.corrected.csv"
+    shell:
+        "python {cupcake}/singlecell/UMI_BC_error_correct.py {input} {output} "
 

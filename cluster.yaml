@@ -61,6 +61,11 @@ minimap:
     cores: 16
     mem: 3000
     time: 360
+nanopore_alignment:
+    cores: 4
+    mem: 24000
+    time: 360
+    himem: "-R himem"
 SQANTI:
     time: 720
     mem: 3000
@@ -103,3 +108,11 @@ demultiplex_abundances:
     mem: 3000
     time: '720'
     #himem: "-R himem"
+sam_to_bam:
+    cores: 4
+    mem: 3000
+    time: 360
+fastqc:
+    cores: 8
+    mem: 3000
+    time: 360

@@ -23,6 +23,8 @@ if ".tsv" in metadata:
 if ".xlsx" in metadata:
     meta_df = pd.read_excel(metadata)
 
+print(meta_df)
+
 prep = config["prep"]
 print(prep)
 samples = meta_df['sample']
@@ -37,7 +39,7 @@ out_folder = config['out_folder']
 data_code = config['data_code']
 ref_genome = config['ref_genome']
 
-out_folder = os.path.join(out_folder, data_code) + "/"
+#out_folder = os.path.join(out_folder, data_code) + "/"
 
 mmi = ref_genome + ".mmi"
 genome = ref_genome + ".fa"
@@ -56,7 +58,8 @@ if prep == "nanopore_direct":
 
 rule all:
     input:
-        out_folder + "multiqc/multiqc_report.html"
+#        out_folder + "multiqc/multiqc_report.html",
+        expand(out_folder + "{sample}/pbmm2/{sample}.junc", sample = samples)
         #expand(output_bam
         #out_folder + "merged_bam/" + data_code + ".flnc.aligned.md.bam"
         #out_folder + "cupcake/" + data_code + "/" + data_code + ".cupcake.collapsed.gff"
@@ -89,6 +92,18 @@ rule align_flnc_bam:
         shell("pbmm2 align --sort -j {pbmm2_threads} --sort-threads 4 -m 3G --preset=ISOSEQ \
         --log-level INFO --unmapped {mmi} {input_bam} | \
         samtools calmd -b - {genome} > {output.bam}")
+
+rule extractJunctions:
+    input:
+        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+    output:
+        out_folder + "{sample}/pbmm2/{sample}.junc"
+    shell:
+        #"samtools index {input};"  redundant if indexes are present
+        #"regtools junctions extract -a 8 -m 50 -M 500000 -s {stranded} -o {output} {input}"
+        # conda version of regtools uses i and I instead of m and M 
+        "ml regtools/0.5.1; "
+        "regtools junctions extract -a 8 -m 50 -M 500000 -s 0 -o {output} {input.bam}"
 
 
 # merge aligned flnc.bam files

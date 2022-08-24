@@ -1,3 +1,5 @@
+library(rtracklayer)
+library(Biostrings)
 library(optparse)
 
 option_list <- list(
@@ -24,13 +26,14 @@ message(" * genome: ", fasta )
 
 message(" * processing the following BAM files:" )
 
-print(bam_files)
+message(bam_files)
 
-message(" * running bambu with", cores, "cores" )
+message(" * running bambu with ", cores, " cores" )
 
 load(anno)
 
-suppressPackageStartupMessages(library(bambu))
+#suppressPackageStartupMessages(
+library(bambu)#)
 
 # run bambu
 res <- bambu(
@@ -39,7 +42,8 @@ res <- bambu(
     genome = fasta,
     stranded = FALSE,
     ncore = cores,
-    rcOutDir = dirname(prefix)
+    rcOutDir = dirname(prefix),
+    lowMemory = TRUE
     )
 
 # save GTF and counts

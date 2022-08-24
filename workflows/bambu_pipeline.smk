@@ -61,6 +61,7 @@ rule create_annotation:
     params:
         script = "scripts/bambu_annotation.R"
     shell:
+        "ml R/4.2.0;"
         "Rscript {params.script} -i {input.gtf} -o {output.rdata}"
 
 rule run_bambu:
@@ -74,6 +75,7 @@ rule run_bambu:
         prefix + "_counts_transcript.txt",
         prefix + "_bambu.RData"
     shell:
+        "ml R/4.2.0;"
         "Rscript {params.script} --cores {bambu_cores} --fasta {ref_fasta} --anno {input.anno} --prefix {prefix} {input.bams}"
 
 ## FILTER MISSINGNESS
@@ -90,7 +92,7 @@ rule filter_missingness:
         tpm = miss_prefix + "_miss_tpm.csv",
         gtf = miss_prefix + "_miss.gtf"
     params:
-        script = "scripts/filter_missingness.R",
+        script = "scripts/bambu_filter.R",
         prefix = miss_prefix,
         min_samples = 5, # eventually put in config
         min_reads = 1 # 1 TPM

@@ -133,12 +133,13 @@ rule SQANTI:
         isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
     shell:
         "conda activate SQANTI3.env; module purge;"
+        "ml R/4.0.3;"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        " -c {params.junctions} "
+        #" -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
         #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"

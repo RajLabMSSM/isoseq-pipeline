@@ -42,19 +42,18 @@ td_folder = "/sc/arion/projects/ad-omics/data/software/TransDecoder-v5.5.0/"
 
 suppa_prefix = out_folder + "stringtie/SUPPA/" + data_code
 
-junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
-
+junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read_junctions/junctions/"
 rule all:
     input:
-        filter_prefix + "_filter_squanti.cds.sorted.gtf",
+        filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
         miss_prefix + "_filter_fpkm.csv",
         miss_prefix + "_filter.gtf",
         prefix + "_all_samples_merged_stringtie.gtf",
         expand( out_folder + "{sample}/stringtie/sample_{sample}/t_data.ctab", sample = samples)
         #prefix + "_extended_annotations.gtf",
         #sqanti_prefix + "_classification.txt",
-        #filter_prefix + "_filter_squanti.sorted.gtf.gz",
-        #expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_filter_squanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
+        #filter_prefix + "_filter_sqanti.sorted.gtf.gz",
+        #expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_filter_sqanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
         #cpat_prefix + ".ORF_seqs.fa",
         #expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
         #suppa_prefix + ".all_suppa_events.ioe",
@@ -139,7 +138,7 @@ rule SQANTI:
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        #" -c {params.junctions} "
+        " -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
         #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"
@@ -157,24 +156,24 @@ rule filter_sqanti:
         sqanti = sqanti_prefix + "_classification.txt",
         fasta = sqanti_prefix + "_corrected.fasta"
     output:
-        counts = filter_prefix + "_filter_squanti_counts.csv",
-        tpm = filter_prefix + "_filter_squanti_fkpm.csv",
-        gff = filter_prefix + "_filter_squanti.cds.gtf",
-        sqanti = filter_prefix + "_filter_squanti_classification.tsv",
-        fasta =  filter_prefix + "_filter_squanti.fasta"
+        counts = filter_prefix + "_filter_sqanti_counts.csv",
+        #tpm = filter_prefix + "_filter_sqanti_fkpm.csv",
+        gff = filter_prefix + "_filter_sqanti.cds.gtf",
+        sqanti = filter_prefix + "_filter_sqanti_classification.tsv",
+        fasta =  filter_prefix + "_filter_sqanti.fasta"
     params:
         script = "scripts/filter_sqanti.R"
     shell:
-        "Rscript {params.script} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
+        "ml R/4.0.3; Rscript {params.script} --counts {input.tpm} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
 
 
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        gtf = filter_prefix + "_filter_squanti.cds.gtf",
+        gtf = filter_prefix + "_filter_sqanti.cds.gtf",
     output:
-        gtf = filter_prefix + "_filter_squanti.cds.sorted.gtf",
-        index = filter_prefix + "_filter_squanti.cds.sorted.gtf.gz.tbi"
+        gtf = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
+        index = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz.tbi"
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:

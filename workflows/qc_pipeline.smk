@@ -56,10 +56,14 @@ if prep == "nanopore_direct":
     output_bam = out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
     minimap_string = "-ax splice -uf -k14" 
 
+if prep == "nanopore_cdna":
+    output_bam = out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
+    minimap_string = "-ax splice"
+
 rule all:
     input:
-#        out_folder + "multiqc/multiqc_report.html",
-        expand(out_folder + "{sample}/pbmm2/{sample}.junc", sample = samples)
+       out_folder + "multiqc/multiqc_report.html",
+#        expand(out_folder + "{sample}/pbmm2/{sample}.junc", sample = samples)
         #expand(output_bam
         #out_folder + "merged_bam/" + data_code + ".flnc.aligned.md.bam"
         #out_folder + "cupcake/" + data_code + "/" + data_code + ".cupcake.collapsed.gff"
@@ -125,9 +129,9 @@ rule nanopore_alignment:
      output:
          out_folder + "{sample}/alignment" + "/{sample}.aligned.sam"
      run:
-        fastq_file = metadata_dict[wildcards.sample]["fastq"]
+        fastq_file = metadata_dict[wildcards.sample]["long_read_fastq"]
 
-        shell( "minimap2 -ax splice -uf -k14 {genome} {fastq_file} > {output} ")
+        shell( "minimap2 {minimap_string} {genome} {fastq_file} > {output} ")
 
 ## convert to bam and coordinate sort
 rule sam_to_bam:

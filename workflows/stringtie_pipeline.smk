@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import os
 
 # stringtie pipeline
@@ -34,9 +33,10 @@ sqanti_threads = "8"
 run_code = config["run_code"]
 stringtie_prefix = out_folder + "{sample}/" + run_code + "/{sample}"
 
-prefix = out_folder + run_code + data_code
+prefix = out_folder + run_code + "/" + data_code
 miss_prefix = out_folder + run_code + "/filter1/" + data_code
 sqanti_prefix = out_folder + run_code + "/SQANTI/" +  data_code
+sqanti_folder = out_folder + run_code + "/SQANTI/"
 filter_prefix = out_folder + run_code + "/filter2/" + data_code
 
 
@@ -80,7 +80,7 @@ rule run_stringtie:
         gtf = stringtie_prefix + ".stringtie.gtf"
     run:
         short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
-        if np.isnan(short_read_bam):
+        if type(short_read_bam) != str:
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")
         else:
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
@@ -120,7 +120,7 @@ rule stringtie_filter:
         min_reads = 0 # FPKM
     shell:
         "ml {R_VERSION};"
-        "Rscript {params.script} --inFolder {out_folder} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --remove_monoexons"
+        "Rscript {params.script} --inFolder {out_folder} --runCode {run_code} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --remove_monoexons"
 
 # run SQANTI using filtered GTF
 rule SQANTI:
@@ -134,7 +134,7 @@ rule SQANTI:
          gff = sqanti_prefix + "_corrected.gtf.cds.gff"
     params:
         sample = data_code,
-        outDir = out_folder + "stringtie/SQANTI/",
+        outDir = sqanti_folder,
         nCores = sqanti_threads,
         nChunks = 8,
         software= "/sc/arion/projects/ad-omics/data/software",
@@ -154,7 +154,7 @@ rule SQANTI:
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        " -c {params.junctions} "
+        #" -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
         #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"

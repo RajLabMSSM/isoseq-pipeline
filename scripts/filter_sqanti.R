@@ -86,7 +86,7 @@ post <- pre %>%
     structural_category == "full splice match" ~ TRUE,
     structural_category != "full splice match" & 
       RTS_stage == FALSE & # no RT-switching junction
-      min_sample_cov >= 5 & min_cov >= 50 & # each junction supported by at least 5 reads in at least 10 short read samples.
+      #min_sample_cov >= 5 & min_cov >= 50 & # each junction supported by at least 5 reads in at least 10 short read samples.
       ( 
         diff_to_gene_TTS == 0 | # has an annotated TTS - in GENCODE v30
         #fsm_TTS_match == TRUE | # has an annotated TTS

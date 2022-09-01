@@ -3,10 +3,11 @@ library(optparse)
 
 option_list <- list(
     make_option(c('--inFolder', '-i' ), help='the input directory', default = ""),
+    make_option(c('--runCode', '-r' ), help="the run code", default = "stringtie"),
     make_option(c('--gff', '-g' ), help = "the GTF or GFF", default = ""),
     make_option(c('--prefix', '-p'), help = "the prefix to the output files", default = ""),
     make_option(c('--min_samples', '-s'), help = "the minimum proportion or minimum number of samples", default = 2),
-    make_option(c('--min_reads', '-r'), help = "the minimum read count per sample", default = 2),
+    make_option(c('--min_reads', '-m'), help = "the minimum read count per sample", default = 2),
     make_option(c('--counts', '-c'), help = "filter on raw counts", action="store_true", default = FALSE),
     make_option(c('--fpkm', '-t'), help = "filter on FPKM", action="store_true", default = FALSE),
     make_option(c('--remove_monoexons', '-e'), help = "whether to remove mono-exonic transcripts", action="store_true", default = FALSE)
@@ -26,7 +27,7 @@ gff_file <- opt$gff
 output <- opt$prefix
 min_samples <- as.numeric(opt$min_samples)
 min_reads <- as.numeric(opt$min_reads)
-
+run_code <- opt$runCode
 # mode - filter either by FPKM or coverage
 mode <- "fpkm"
 
@@ -54,6 +55,7 @@ suppressPackageStartupMessages(library(rtracklayer))
 
 count_files <- list.files(in_folder, pattern = "t_data.ctab", full.names = TRUE, recursive = TRUE)
 count_files <- count_files[file.size(count_files) > 0]
+count_files <- count_files[ grepl(run_code, count_files) ]
 message(" * reading in transcript counts from ", length(count_files), " files")
 count_res <- map(count_files, read_tsv)
 names(count_res) <- gsub("sample_", "", basename(dirname(count_files)))

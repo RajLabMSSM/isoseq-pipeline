@@ -29,51 +29,66 @@ merge_threads = "4"
 # sqanti
 sqanti_threads = "8"
 
-prefix = out_folder + "stringtie/" + data_code
-miss_prefix = out_folder + "stringtie/filter1/" + data_code
-sqanti_prefix = out_folder + "stringtie/SQANTI/" +  data_code
-filter_prefix = out_folder + "stringtie/filter/" + data_code
-cpat_prefix = out_folder + "stringtie/CPAT/" + data_code
-cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
+# sort out file prefixes
+run_code = config["run_code"]
+stringtie_prefix = out_folder + "{sample}/" + run_code + "/{sample}"
 
-td_prefix = out_folder + "stringtie/TransDecode/" + data_code
-td_out = out_folder + "stringtie/TransDecode/" 
-td_folder = "/sc/arion/projects/ad-omics/data/software/TransDecoder-v5.5.0/"
+prefix = out_folder + run_code + "/" + data_code
+miss_prefix = out_folder + run_code + "/filter1/" + data_code
+sqanti_prefix = out_folder + run_code + "/SQANTI/" +  data_code
+sqanti_folder = out_folder + run_code + "/SQANTI/"
+filter_prefix = out_folder + run_code + "/filter2/" + data_code
 
-suppa_prefix = out_folder + "stringtie/SUPPA/" + data_code
 
-junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
+#cpat_prefix = out_folder + "stringtie/CPAT/" + data_code
+#cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
+
+#td_prefix = out_folder + "stringtie/TransDecode/" + data_code
+#td_out = out_folder + "stringtie/TransDecode/" 
+#td_folder = "/sc/arion/projects/ad-omics/data/software/TransDecoder-v5.5.0/"
+
+#suppa_prefix = out_folder + "stringtie/SUPPA/" + data_code
+
+junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read_junctions/junctions/"
 
 rule all:
     input:
-        filter_prefix + "_filter_squanti.cds.sorted.gtf",
-        miss_prefix + "_filter_fpkm.csv",
-        miss_prefix + "_filter.gtf",
-        prefix + "_all_samples_merged_stringtie.gtf",
-        expand( out_folder + "{sample}/stringtie/sample_{sample}/t_data.ctab", sample = samples)
+        #sqanti_prefix + "_classification.txt",
+        #expand(out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab", sample = samples)
+        filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
+        #miss_prefix + "_filter_fpkm.csv"
+        #miss_prefix + "_filter.gtf",
+        #prefix + "_all_samples_merged_stringtie.gtf",
+        #expand( out_folder + "{sample}/stringtie/sample_{sample}/t_data.ctab", sample = samples)
         #prefix + "_extended_annotations.gtf",
         #sqanti_prefix + "_classification.txt",
-        #filter_prefix + "_filter_squanti.sorted.gtf.gz",
-        #expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_filter_squanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
+        #filter_prefix + "_filter_sqanti.sorted.gtf.gz",
+        #expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_filter_sqanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
         #cpat_prefix + ".ORF_seqs.fa",
         #expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
         #suppa_prefix + ".all_suppa_events.ioe",
         #suppa_prefix + "_events.psi.gz",
         #td_prefix + ".transdecoder.genome.gff3"
 
+# run stringtie2 to assemble long reads
+# if matching short read bam present then run --mix mode
 rule run_stringtie:
     input:
         gtf = ref_gtf,
         bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
     output:
-        gtf = out_folder + "{sample}/stringtie/{sample}.stringtie.gtf"
-    shell:
-        "{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}"
+        gtf = stringtie_prefix + ".stringtie.gtf"
+    run:
+        short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
+        if type(short_read_bam) != str:
+            shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")
+        else:
+            shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
 
 rule merge_stringtie:
     input:
         ref = ref_gtf,
-        gtf = expand( out_folder + "{sample}/stringtie/{sample}.stringtie.gtf", sample = samples)
+        gtf = expand( stringtie_prefix + ".stringtie.gtf", sample = samples)
     output:
         prefix + "_all_samples_merged_stringtie.gtf"
     shell:
@@ -84,16 +99,16 @@ rule quant_stringtie:
         gtf = prefix + "_all_samples_merged_stringtie.gtf",
         bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
     output:
-        quant = out_folder + "{sample}/stringtie/sample_{sample}/t_data.ctab"
+        quant = out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab"
     shell:
-        "{stringtie} -o {out_folder}/{wildcards.sample}/stringtie/sample_{wildcards.sample}/quant.txt -eB -G {input.gtf} {input.bam}"
+        "{stringtie} -o {out_folder}/{wildcards.sample}/{run_code}/sample_{wildcards.sample}/quant.txt -eB -G {input.gtf} {input.bam}"
 
 # remove monoexons
 # keep all annotated found at least once
 # keep novel tx if found twice
 rule stringtie_filter:
     input:
-        counts = expand(out_folder + "{sample}/stringtie/sample_{sample}/t_data.ctab", sample = samples),
+        counts = expand(out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab", sample = samples),
         gtf = prefix + "_all_samples_merged_stringtie.gtf"
     output:
         counts = miss_prefix + "_filter_fpkm.csv",
@@ -105,7 +120,7 @@ rule stringtie_filter:
         min_reads = 0 # FPKM
     shell:
         "ml {R_VERSION};"
-        "Rscript {params.script} --inFolder {out_folder} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --remove_monoexons"
+        "Rscript {params.script} --inFolder {out_folder} --runCode {run_code} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --remove_monoexons"
 
 # run SQANTI using filtered GTF
 rule SQANTI:
@@ -119,7 +134,7 @@ rule SQANTI:
          gff = sqanti_prefix + "_corrected.gtf.cds.gff"
     params:
         sample = data_code,
-        outDir = out_folder + "stringtie/SQANTI/",
+        outDir = sqanti_folder,
         nCores = sqanti_threads,
         nChunks = 8,
         software= "/sc/arion/projects/ad-omics/data/software",
@@ -157,24 +172,24 @@ rule filter_sqanti:
         sqanti = sqanti_prefix + "_classification.txt",
         fasta = sqanti_prefix + "_corrected.fasta"
     output:
-        counts = filter_prefix + "_filter_squanti_counts.csv",
-        tpm = filter_prefix + "_filter_squanti_fkpm.csv",
-        gff = filter_prefix + "_filter_squanti.cds.gtf",
-        sqanti = filter_prefix + "_filter_squanti_classification.tsv",
-        fasta =  filter_prefix + "_filter_squanti.fasta"
+        counts = filter_prefix + "_filter_sqanti_counts.csv",
+        #tpm = filter_prefix + "_filter_sqanti_fkpm.csv",
+        gff = filter_prefix + "_filter_sqanti.cds.gtf",
+        sqanti = filter_prefix + "_filter_sqanti_classification.tsv",
+        fasta =  filter_prefix + "_filter_sqanti.fasta"
     params:
         script = "scripts/filter_sqanti.R"
     shell:
-        "Rscript {params.script} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
+        "ml R/4.0.3; Rscript {params.script} --counts {input.tpm} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
 
 
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        gtf = filter_prefix + "_filter_squanti.cds.gtf",
+        gtf = filter_prefix + "_filter_sqanti.cds.gtf",
     output:
-        gtf = filter_prefix + "_filter_squanti.cds.sorted.gtf",
-        index = filter_prefix + "_filter_squanti.cds.sorted.gtf.gz.tbi"
+        gtf = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
+        index = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz.tbi"
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:

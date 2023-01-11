@@ -19,42 +19,11 @@ metadata_dict = meta_df.set_index("sample").T.to_dict()
 # isoquant specific params
 matching_strategy = "precise"
 model_strategy = "default_ccs"
-isoquant_threads = 8
+isoquant_threads = 16
 
 rule all:
     input: 
         out_folder + "isoquant/" + data_code + "/combined_gene_counts.tsv"
-
-# full pipeline would have to align BAM files first
-rule align_flnc_bam:
-    output:
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
-    run:
-        input_bam = metadata_dict[wildcards.sample]["flnc_bam_path"]
-
-        shell("pbmm2 align --sort -j {pbmm2_threads} --sort-threads 4 -m 3G --preset=ISOSEQ \
-                 --log-level INFO --unmapped {mmi} {input_bam} | \
-              samtools calmd -b - {genome} > {output.bam}")
-
-# index bams
-rule index_flnc_bam:
-    input:
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
-    output:
-        bai = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam.bai"
-    shell:
-        "samtools index {input.bam}"
-
-# get bam statistics
-rule samtools:
-    input:
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
-    output:
-        flagstat =  out_folder + "{sample}/samtools/{sample}.flagstat.txt",
-        idxstat =  out_folder + "{sample}/samtools/{sample}.idxstat.txt"
-    shell:
-        "samtools flagstat {input.bam} > {output.flagstat};"
-        "samtools idxstats {input.bam} > {output.idxstat} "
 
 # write list of BAM files for isoquant
 # currently insists that each line is a sample but each sample should be separated by a blank line:
@@ -69,7 +38,7 @@ rule write_config:
         bam_paths = [os.path.abspath(i) for i in input.bams]
         with open(output.config_csv, 'w') as filehandle:
             for listitem in bam_paths:
-                filehandle.write('%s\n\n' % listitem)
+                filehandle.write('%s\n' % listitem)
 
 # create gene db from GTF
 rule create_db:
@@ -92,9 +61,12 @@ rule run_isoquant:
     output:
         out_folder + "isoquant/" + data_code + "/combined_gene_counts.tsv"
     shell:
-        "isoquant.py -d pacbio_ccs --polya_trimmed --fl_data --bam_list {input.bam_list} "
-        "--reference {reference_fasta} --genedb {input.db} --output {out_folder}isoquant/{data_code}/ "
-        "--labels {params.labels} " 
-        "--sqanti_output  --threads {isoquant_threads} " 
-        "--matching_strategy {matching_strategy} "
-        "--model_construction_strategy {model_strategy} "
+        "isoquant.py --data_type pacbio_ccs --bam_list {input.bam_list} "
+        "--read_group file_name "
+        "--reference {reference_fasta} "
+        "--genedb {input.db} --output {out_folder}isoquant/{data_code}/ "
+        #"--labels {params.labels} " 
+        #"--sqanti_output  "
+        "--threads {isoquant_threads} " 
+        #"--matching_strategy {matching_strategy} "
+        #"--model_construction_strategy {model_strategy} "

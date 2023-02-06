@@ -3,8 +3,9 @@ import os
 
 # bambu pipeline
 
-# uses r_test environment where bambu is installed on R 4.0.1
-shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml R/4.0.3;")
+# Bambu v3.0 is installed on R/4.2.2 with Bioconductor 3.16
+R_VERSION = "R/4.2.2"
+shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml R/4.2.2;")
 
 ref_fasta = config["ref_genome"] + ".fa"
 ref_gtf = config["ref_gtf"]
@@ -17,7 +18,6 @@ meta_df = pd.read_excel(metadata)
 samples = meta_df['sample']
 
 metadata_dict = meta_df.set_index("sample").T.to_dict()
-#isoquant = "/sc/arion/projects/ad-omics/data/software/IsoQuant/isoquant.py"
 
 # bambu specific params
 matching_strategy = "precise"
@@ -29,7 +29,7 @@ sqanti_threads = "8"
 prefix = out_folder + "bambu/" + data_code
 miss_prefix = out_folder + "bambu/missingness/" + data_code
 sqanti_prefix = out_folder + "bambu/SQANTI/" +  data_code + "_bambu"  
-filter_prefix = out_folder + "bambu/filter/" + data_code
+filter_prefix = out_folder + "bambu/sqanti_filter/" + data_code
 cpat_prefix = out_folder + "bambu/CPAT/" + data_code
 cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
 
@@ -43,15 +43,17 @@ junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junct
 
 rule all:
     input:
-        prefix + "_extended_annotations.gtf",
-        sqanti_prefix + "_classification.txt",
-        #filter_prefix + "_miss_sqanti.sorted.gtf.gz",
-        expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
-        cpat_prefix + ".ORF_seqs.fa",
-        expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
-        suppa_prefix + ".all_suppa_events.ioe",
-        suppa_prefix + "_events.psi.gz",
-        td_prefix + ".transdecoder.genome.gff3"
+        prefix + "_bambu.RData",
+        filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz"
+#        prefix + "_extended_annotations.gtf",
+#        sqanti_prefix + "_classification.txt",
+#        #filter_prefix + "_miss_sqanti.sorted.gtf.gz",
+#        expand( "{sample}.sorted.gtf.gz.tbi", sample = [filter_prefix + "_miss_sqanti.cds.gtf", sqanti_prefix + "_corrected.gtf.cds.gff"]), #td_prefix + ".transdecoder.genome.gff3" ] ),
+#        cpat_prefix + ".ORF_seqs.fa",
+#        expand(suppa_prefix + ".events_{event_type}_strict.ioe", event_type = ["SE", "MX","RI","AF", "AL", "A3", "A5"]),
+#        suppa_prefix + ".all_suppa_events.ioe",
+#        suppa_prefix + "_events.psi.gz",
+#        td_prefix + ".transdecoder.genome.gff3"
 
 rule create_annotation:
     input: 
@@ -61,7 +63,7 @@ rule create_annotation:
     params:
         script = "scripts/bambu_annotation.R"
     shell:
-        "ml R/4.2.0;"
+        "ml {R_VERSION}/;"
         "Rscript {params.script} -i {input.gtf} -o {output.rdata}"
 
 rule run_bambu:
@@ -75,7 +77,7 @@ rule run_bambu:
         prefix + "_counts_transcript.txt",
         prefix + "_bambu.RData"
     shell:
-        "ml R/4.2.0;"
+        "ml {R_VERSION};"
         "Rscript {params.script} --cores {bambu_cores} --fasta {ref_fasta} --anno {input.anno} --prefix {prefix} {input.bams}"
 
 ## FILTER MISSINGNESS
@@ -94,10 +96,10 @@ rule filter_missingness:
     params:
         script = "scripts/bambu_filter.R",
         prefix = miss_prefix,
-        min_samples = 5, # eventually put in config
-        min_reads = 1 # 1 TPM
+        min_samples = 2, # eventually put in config
+        min_reads = 0 # 1 TPM
     shell:
-        "ml R/3.6.0;"
+        "ml {R_VERSION};"
         "Rscript {params.script} --matrix {input.counts} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --min_reads {params.min_reads} --remove_monoexons --tpm"
 
 # run SQANTI using filtered GTF
@@ -149,29 +151,33 @@ rule filter_sqanti:
         sqanti = sqanti_prefix + "_classification.txt",
         fasta = sqanti_prefix + "_corrected.fasta"
     output:
-        counts = filter_prefix + "_miss_sqanti_counts.csv",
-        tpm = filter_prefix + "_miss_sqanti_tpm.csv",
-        gff = filter_prefix + "_miss_sqanti.cds.gtf",
-        sqanti = filter_prefix + "_miss_sqanti_classification.tsv",
-        fasta =  filter_prefix + "_miss_sqanti.fasta"
+        counts = filter_prefix + "_filter_sqanti_counts.csv",
+        tpm = filter_prefix + "_filter_sqanti_tpm.csv",
+        gff = filter_prefix + "_filter_sqanti.cds.gtf",
+        sqanti = filter_prefix + "_filter_sqanti_classification.tsv",
+        fasta =  filter_prefix + "_filter_sqanti.fasta"
     params:
         script = "scripts/filter_sqanti.R"
     shell:
-        "Rscript {params.script} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}" 
+        "ml {R_VERSION}; Rscript {params.script} --input {miss_prefix} --counts {input.counts} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}" 
+
+
 
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        "{gff}"
+        gtf = filter_prefix + "_filter_sqanti.cds.gtf",
     output:
-        gtf = "{gff}.sorted.gtf.gz",
-        index = "{gff}.sorted.gtf.gz.tbi"
+        gtf = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
+        index = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz.tbi"
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:
         "ml tabix;"
-        "{params.gff3sort} {input} | bgzip > {output.gtf};"
+        "{params.gff3sort} {input.gtf} | bgzip > {output.gtf};"
         "tabix {output.gtf} "
+
+
 
 # run CPAT to predict ORFs
 rule cpat:

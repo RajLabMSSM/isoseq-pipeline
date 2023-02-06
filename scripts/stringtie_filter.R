@@ -59,7 +59,8 @@ count_files <- count_files[ grepl(run_code, count_files) ]
 message(" * reading in transcript counts from ", length(count_files), " files")
 count_res <- map(count_files, read_tsv)
 names(count_res) <- gsub("sample_", "", basename(dirname(count_files)))
-save.image("debug.RData")
+save.image("filter_stringtie_debug.RData")
+
 df <- map2(count_res, names(count_res), ~{
         x <- data.frame(.x$FPKM, row.names = .x$t_name)
         names(x) <- .y
@@ -71,14 +72,13 @@ if( remove_monoexons == TRUE){
     anno <- count_res[[1]]
     multi <- filter(anno, num_exons > 1)
     message( " * removing ", nrow(anno) - nrow(multi), " monoexons")
-    clean <- df[multi$t_name,]
-}else{
-    clean <- df
+    df <- df[multi$t_name,]
 }
+
 # keep all transcripts found at least once
 # keep all annotated transcripts
 # only keep novel if seen at least twice
-clean <- clean[ 
+clean <- df[ 
     ( grepl("ENST", row.names(df) ) & rowSums(df > 0) > 0 ) |
     ( grepl("MSTRG",row.names(df) ) & rowSums(df > 0) > 1 ) 
 ,] 

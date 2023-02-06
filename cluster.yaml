@@ -41,9 +41,9 @@ run_bambu:
   queue: premium
   himem: "-R himem"
 run_isoquant:
-  cores: 16
+  cores: 8
   mem: 8000
-  time: 24:00
+  time: 72:00
   queue: premium
   himem: "-R himem"
 run_talon_simul:

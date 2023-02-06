@@ -1,7 +1,8 @@
 import pandas as pd
 import os
 
-# stringtie pipeline
+# stringtie2 pipeline
+# uses hybrid assembly of long and short read RNA-seq
 R_VERSION = "R/4.0.3"
 shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml R/4.0.3;")
 

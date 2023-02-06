@@ -2,6 +2,9 @@ library(rtracklayer)
 library(Biostrings)
 library(optparse)
 
+#options(BIOCONDUCTOR_ONLINE_VERSION_DIAGNOSIS = FALSE)
+options(BIOCONDUCTOR_CONFIG_FILE = "/sc/arion/projects/ad-omics/data/software/bambu/config.yaml")
+
 option_list <- list(
     make_option(c('--anno', '-a' ), help='the annotation RData file produced by bambu', default = ""),
     make_option(c('--prefix', '-p'), help = "the prefix to the output files", default = ""),
@@ -40,10 +43,10 @@ res <- bambu(
     reads = bam_files,
     annotations = anno,
     genome = fasta,
-    stranded = FALSE,
-    ncore = cores,
-    rcOutDir = dirname(prefix),
-    lowMemory = TRUE
+    #stranded = FALSE,
+    ncore = cores
+    #rcOutDir = dirname(prefix)
+    #lowMemory = TRUE
     )
 
 # save GTF and counts

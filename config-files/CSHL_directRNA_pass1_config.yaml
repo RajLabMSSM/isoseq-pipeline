@@ -1,0 +1,19 @@
+
+prep: "nanopore_direct"
+
+metadata: "/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/config-files/CSHL_directRNA_pass1_metadata.tsv"
+
+data_code:
+        "CSHL_directRNA_pass1"
+ref_genome:
+        # omit the .fa
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome" 
+ref_gtf:
+        # cannot be gzipped
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.primary_assembly.annotation.gtf"
+genome_code:
+        "GRCh38_primary"
+gtf_code:
+        "GENCODE_v38"
+out_folder:
+        "results/"

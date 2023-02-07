@@ -19,7 +19,7 @@ sqanti_file <- opt$sqanti
 fasta_file <- opt$fasta
 counts_file <- opt$counts
 #counts_file <- paste0(input, "_miss_counts.csv")
-#tpm_file <- paste0(input, "_miss_tpm.csv")
+tpm_file <- paste0(input, "_miss_tpm.csv")
 gff_file <- opt$gff
 
 stopifnot(file.exists(counts_file) )
@@ -29,7 +29,7 @@ stopifnot(file.exists(sqanti_file))
 
 sqanti_out <- paste0(output, "_filter_sqanti_classification.tsv")
 counts_out <- paste0(output, "_filter_sqanti_counts.csv")
-#tpm_out <- paste0(output, "_filter_sqanti_tpm.csv")
+tpm_out <- paste0(output, "_filter_sqanti_tpm.csv")
 gff_out <- paste0(output, "_filter_sqanti.cds.gtf")
 fasta_out <- paste0(output, "_filter_sqanti.fasta")
 
@@ -70,7 +70,7 @@ pre$rc_score <- calculate_rc_score(pre$seq_A_downstream_TTS)
 
 # read in counts, TPM and GTF
 counts <- read_csv(counts_file)
-#tpm <- read_csv(tpm_file)
+tpm <- read_csv(tpm_file)
 gff <- import(gff_file, format = "GFF")
 
 # filter transcripts using SQANTI settings
@@ -111,7 +111,7 @@ reasons <- post %>%
 
 # filter output files
 counts <- counts[ counts$id %in% post$isoform,]
-#tpm <- tpm[ tpm$id %in% post$isoform,] 
+tpm <- tpm[ tpm$id %in% post$isoform,] 
 gff <- gff[ gff$transcript_id %in% post$isoform ]
 
 # read in FASTA and filter
@@ -125,8 +125,8 @@ message(" * writing to", sqanti_out)
 write_tsv(post, file = sqanti_out)
 message( " * writing to ", counts_out )
 write_csv(counts, file = counts_out)
-#message(" * writing to ", tpm_out)
-#write_csv(tpm, file = tpm_out)
+message(" * writing to ", tpm_out)
+write_csv(tpm, file = tpm_out)
 message(" * writing to ", gff_out)
 export(gff, con = gff_out, format = "GTF")
 message(" * writing to ", fasta_out )

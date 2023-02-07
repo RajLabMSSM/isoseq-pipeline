@@ -5,10 +5,13 @@ import os
 
 # Bambu v3.0 is installed on R/4.2.2 with Bioconductor 3.16
 R_VERSION = "R/4.2.2"
-shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml R/4.2.2;")
+# SQANTI needs R/4.0.3
+SQANTI_R_VERSION = "R/4.0.3"
+shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake;")
 
-ref_fasta = config["ref_genome"] + ".fa"
+ref_genome = config["ref_genome"] + ".fa"
 ref_gtf = config["ref_gtf"]
+ref_fasta = config["ref_fasta"]
 metadata = config["metadata"]
 data_code = config["data_code"]
 out_folder = config["out_folder"]
@@ -32,6 +35,7 @@ sqanti_prefix = out_folder + "bambu/SQANTI/" +  data_code + "_bambu"
 filter_prefix = out_folder + "bambu/sqanti_filter/" + data_code
 cpat_prefix = out_folder + "bambu/CPAT/" + data_code
 cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
+combine_prefix = out_folder + "bambu/combine/" + data_code + "_combined"
 
 td_prefix = out_folder + "bambu/TransDecode/" + data_code
 td_out = out_folder + "bambu/TransDecode/" 
@@ -39,12 +43,13 @@ td_folder = "/sc/arion/projects/ad-omics/data/software/TransDecoder-v5.5.0/"
 
 suppa_prefix = out_folder + "bambu/SUPPA/" + data_code
 
-junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
+#junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
 
 rule all:
     input:
-        prefix + "_bambu.RData",
-        filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz"
+        gtf_out_files = expand( "{gtf_prefix}.sorted.gtf.gz", gtf_prefix = [ filter_prefix + "_filter_sqanti.cds",  combine_prefix ] )
+        #prefix + "_bambu.RData",
+        #filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz"
 #        prefix + "_extended_annotations.gtf",
 #        sqanti_prefix + "_classification.txt",
 #        #filter_prefix + "_miss_sqanti.sorted.gtf.gz",
@@ -68,7 +73,7 @@ rule create_annotation:
 
 rule run_bambu:
     input:
-        bams = expand( out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam", sample = samples),
+        bams = expand( out_folder + "{sample}/alignment/{sample}.aligned.bam", sample = samples),
         anno = out_folder + "bambu/bambu_annotation.RData"
     params:
         script = "scripts/bambu_run.R"
@@ -78,7 +83,7 @@ rule run_bambu:
         prefix + "_bambu.RData"
     shell:
         "ml {R_VERSION};"
-        "Rscript {params.script} --cores {bambu_cores} --fasta {ref_fasta} --anno {input.anno} --prefix {prefix} {input.bams}"
+        "Rscript {params.script} --cores {bambu_cores} --fasta {ref_genome} --anno {input.anno} --prefix {prefix} {input.bams}"
 
 ## FILTER MISSINGNESS
 # remove all transcripts with greater than X% missingness
@@ -119,7 +124,7 @@ rule SQANTI:
         nChunks = 8,
         software= "/sc/arion/projects/ad-omics/data/software",
         #junctions = junctionArgs,
-        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
+        #junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
         gtf = ref_gtf,
         #genome = referenceFa + ".fa",
         intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
@@ -128,19 +133,20 @@ rule SQANTI:
         isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
     shell:
         "conda activate SQANTI3.env; module purge;"
+        "ml {SQANTI_R_VERSION};"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        " -c {params.junctions} "
+        #" -c {params.junctions} "
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
         #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"
         #" --fl_count {input.abundance}"
         " --gtf {input.gtf} "
         #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"
-        " {params.gtf} {ref_fasta} "
+        " {params.gtf} {ref_genome} "
 
 ## filter SQANTI
 rule filter_sqanti:
@@ -159,25 +165,41 @@ rule filter_sqanti:
     params:
         script = "scripts/filter_sqanti.R"
     shell:
-        "ml {R_VERSION}; Rscript {params.script} --input {miss_prefix} --counts {input.counts} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}" 
+        "ml {SQANTI_R_VERSION}; Rscript {params.script} --input {miss_prefix} --counts {input.counts} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}" 
 
-
+## combine novel transcripts with annotated reference GTF 
+rule combine_transcripts:
+    input:
+        anno_gtf = ref_gtf,
+        anno_fasta = ref_fasta,
+        novel_gtf = filter_prefix + "_filter_sqanti.cds.gtf",
+        novel_fasta = filter_prefix + "_filter_sqanti.fasta"
+    output:
+        combine_prefix + ".gtf",
+        combine_prefix + ".fa"
+    shell:
+        "ml R/4.0.3;"
+        " Rscript scripts/combine_gtf.R "
+        "--annoGTF {input.anno_gtf} "
+        "--annoFASTA {input.anno_fasta} "
+        "--novelGTF {input.novel_gtf} "
+        "--novelFASTA {input.novel_fasta} "
+        "--out {combine_prefix} "
+        "--novelGenes "
 
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        gtf = filter_prefix + "_filter_sqanti.cds.gtf",
+        gtf = "{gtf_prefix}.gtf"
     output:
-        gtf = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
-        index = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz.tbi"
+        gtf = "{gtf_prefix}.sorted.gtf.gz",
+        index = "{gtf_prefix}.sorted.gtf.gz.tbi"
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:
         "ml tabix;"
         "{params.gff3sort} {input.gtf} | bgzip > {output.gtf};"
         "tabix {output.gtf} "
-
-
 
 # run CPAT to predict ORFs
 rule cpat:
@@ -189,6 +211,7 @@ rule cpat:
         "conda activate isoseq-pipeline;"
         "cpat.py -x {cpat_folder}/Human_Hexamer.tsv -d {cpat_folder}/Human_logitModel.RData --top-orf=5 -g {input.fasta} -o {cpat_prefix};"
         "mv CPAT_run_info.log {cpat_folder}"
+
 # also TransDecoder
 rule TransDecoder:
     input:

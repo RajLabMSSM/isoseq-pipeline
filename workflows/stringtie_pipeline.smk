@@ -6,8 +6,9 @@ import os
 R_VERSION = "R/4.0.3"
 shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml R/4.0.3;")
 
-ref_fasta = config["ref_genome"] + ".fa"
+ref_genome = config["ref_genome"] + ".fa"
 ref_gtf = config["ref_gtf"]
+ref_fasta = config["ref_fasta"]
 metadata = config["metadata"]
 data_code = config["data_code"]
 out_folder = config["out_folder"]
@@ -31,7 +32,8 @@ merge_threads = "4"
 sqanti_threads = "8"
 
 # sort out file prefixes
-run_code = config["run_code"]
+#run_code = config["run_code"]
+run_code = "stringtie2"
 stringtie_prefix = out_folder + "{sample}/" + run_code + "/{sample}"
 
 prefix = out_folder + run_code + "/" + data_code
@@ -39,7 +41,7 @@ miss_prefix = out_folder + run_code + "/filter1/" + data_code
 sqanti_prefix = out_folder + run_code + "/SQANTI/" +  data_code
 sqanti_folder = out_folder + run_code + "/SQANTI/"
 filter_prefix = out_folder + run_code + "/filter2/" + data_code
-
+combine_prefix = out_folder + run_code + "/combine/" + data_code + "_combined"
 
 #cpat_prefix = out_folder + "stringtie/CPAT/" + data_code
 #cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
@@ -54,9 +56,10 @@ junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read_junct
 
 rule all:
     input:
+        gtf_out_files = expand( "{gtf_prefix}.sorted.gtf.gz", gtf_prefix = [ filter_prefix + "_filter_sqanti.cds",  combine_prefix ] )
         #sqanti_prefix + "_classification.txt",
         #expand(out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab", sample = samples)
-        filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
+        #filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
         #miss_prefix + "_filter_fpkm.csv"
         #miss_prefix + "_filter.gtf",
         #prefix + "_all_samples_merged_stringtie.gtf",
@@ -76,15 +79,15 @@ rule all:
 rule run_stringtie:
     input:
         gtf = ref_gtf,
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        bam = out_folder + "{sample}/alignment/{sample}.aligned.bam"
     output:
         gtf = stringtie_prefix + ".stringtie.gtf"
     run:
-        short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
-        if type(short_read_bam) != str:
-            shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")
-        else:
+        if "short_read_bam_path" in metadata_dict[wildcards.sample].keys():
+            short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
+        else:
+            shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")
 
 rule merge_stringtie:
     input:
@@ -98,7 +101,7 @@ rule merge_stringtie:
 rule quant_stringtie:
     input:
         gtf = prefix + "_all_samples_merged_stringtie.gtf",
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        bam = out_folder + "{sample}/alignment/{sample}.aligned.bam"
     output:
         quant = out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab"
     shell:
@@ -162,7 +165,7 @@ rule SQANTI:
         #" --fl_count {input.abundance}"
         " --gtf {input.gtf} "
         #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"
-        " {params.gtf} {ref_fasta} "
+        " {params.gtf} {ref_genome} "
 
 ## filter SQANTI
 rule filter_sqanti:
@@ -183,14 +186,33 @@ rule filter_sqanti:
     shell:
         "ml R/4.0.3; Rscript {params.script} --counts {input.tpm} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
 
-
+## combine novel transcripts with annotated reference GTF 
+rule combine_transcripts:
+    input:
+        anno_gtf = ref_gtf,
+        anno_fasta = ref_fasta,
+        novel_gtf = filter_prefix + "_filter_sqanti.cds.gtf",
+        novel_fasta = filter_prefix + "_filter_sqanti.fasta"
+    output:
+        combine_prefix + ".gtf",
+        combine_prefix + ".fa"
+    shell:
+        "ml R/4.0.3;"
+        " Rscript scripts/combine_gtf.R "
+        "--annoGTF {input.anno_gtf} "
+        "--annoFASTA {input.anno_fasta} "
+        "--novelGTF {input.novel_gtf} "
+        "--novelFASTA {input.novel_fasta} "
+        "--out {combine_prefix} "
+        "--novelGenes "
+    
 # sort and tabix index final GFF
 rule indexGFF:
     input:
-        gtf = filter_prefix + "_filter_sqanti.cds.gtf",
+        gtf = "{gtf_prefix}.gtf"
     output:
-        gtf = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz",
-        index = filter_prefix + "_filter_sqanti.cds.sorted.gtf.gz.tbi"
+        gtf = "{gtf_prefix}.sorted.gtf.gz",
+        index = "{gtf_prefix}.sorted.gtf.gz.tbi"    
     params:
         gff3sort = "/sc/arion/projects/ad-omics/data/software/gff3sort/gff3sort.pl"
     shell:
@@ -198,21 +220,3 @@ rule indexGFF:
         "{params.gff3sort} {input.gtf} | bgzip > {output.gtf};"
         "tabix {output.gtf} "
 
-
-# later
-rule create_fasta:
-    input:
-        prefix + "_all_samples_merged_stringtie.gtf"
-    output:
-        prefix + "_all_samples_merged_stringtie.fasta"
-    shell:
-        "{gffread} -w {output} -g {genome} {input}"
-
-rule salmon_index:
-    input:
-        prefix + "_all_samples_merged_stringtie.fasta"
-    output:
-        prefix + "_all_samples_merged_stringtie.salmon"
-    shell:
-        "{salmon} index -t {input} -i {output}"
-#

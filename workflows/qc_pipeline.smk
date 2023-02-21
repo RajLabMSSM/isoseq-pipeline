@@ -11,7 +11,7 @@ shell.prefix('export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); sour
 import pandas as pd
 import xlrd
 import glob
-
+R_VERSION = "R/4.0.3"
 metadata = config['metadata']
 
 reflat_file =  "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.primary_assembly.annotation.reflat"
@@ -28,6 +28,8 @@ print(meta_df)
 prep = config["prep"]
 print(prep)
 samples = meta_df['sample']
+
+print(samples)
 #sampleFA = meta_df['fasta_path']
 #sampleREP = meta_df['cluster_report_path']
 
@@ -50,7 +52,8 @@ pbmm2_threads = "8"
 #chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
 
 if prep == "pacbio":
-    output_bam = out_folder + "merged_bam/" + data_code + ".flnc.aligned.md.bam"
+    output_bam = out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
+    #output_bam = out_folder + "merged_bam/" + data_code + ".flnc.aligned.bam"
 
 if prep == "nanopore_direct":
     output_bam = out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
@@ -62,10 +65,14 @@ if prep == "nanopore_cdna":
 
 rule all:
     input:
-       out_folder + "multiqc/multiqc_report.html",
-#        expand(out_folder + "{sample}/pbmm2/{sample}.junc", sample = samples)
+        out_folder + data_code + "_read_lengths_collated.tsv.gz"
+       #expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample = samples),
+        #out_folder + "read_lengths_collated.tsv",
+        #expand(out_folder + "{sample}/qc/{sample}.{reads}.readlengths.txt", sample = samples, reads = ["mapped", "unmapped"]),
+       out_folder + "multiqc/multiqc_report.html"
+       #expand(out_folder + "{sample}/pbmm2/{sample}.junc", sample = samples)
         #expand(output_bam
-        #out_folder + "merged_bam/" + data_code + ".flnc.aligned.md.bam"
+        #out_folder + "merged_bam/" + data_code + ".flnc.aligned.bam"
         #out_folder + "cupcake/" + data_code + "/" + data_code + ".cupcake.collapsed.gff"
       #out_folder + "cupcake/" + data_code + ".cupcake.collapsed.gff"
         #out_folder + "flnc_bam/all_samples.flnc.aligned.bam",
@@ -90,7 +97,7 @@ rule align_flnc_bam:
     input:
         mmi
     output:
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
     run:
         input_bam = metadata_dict[wildcards.sample]["flnc_bam_path"]
         shell("pbmm2 align --sort -j {pbmm2_threads} --sort-threads 4 -m 3G --preset=ISOSEQ \
@@ -99,7 +106,7 @@ rule align_flnc_bam:
 
 rule extractJunctions:
     input:
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
     output:
         out_folder + "{sample}/pbmm2/{sample}.junc"
     shell:
@@ -113,11 +120,11 @@ rule extractJunctions:
 # merge aligned flnc.bam files
 rule merge_flnc_bams:
     input:
-        expand(out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam", sample = samples)
+        expand(out_folder + "{sample}/pbmm2/{sample}.aligned.bam", sample = samples)
     params:
         tmp = out_folder + "merged_bam/" + data_code + ".flnc.aligned.tmp.bam"
     output:
-        out_folder + "merged_bam/" + data_code + ".flnc.aligned.md.bam"
+        out_folder + "merged_bam/" + data_code + ".flnc.aligned.bam"
     shell:
         "samtools merge {params.tmp} {input};"
         "samtools view -bh -F 4 {params.tmp} > {output};"
@@ -156,7 +163,7 @@ rule rnaseqc:
     input:
         geneGTF = genes_file, #ref_gtf + ".genes",
         bam = output_bam
-        #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
     params:
         out =  out_folder + "{sample}/qc/"
     output:
@@ -171,7 +178,7 @@ rule rnaseqc:
 rule fastqc:
     input: 
         bam = output_bam
-        #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
     output: 
         out_folder + "{sample}/qc/{sample}.aligned_fastqc.html"
     shell:
@@ -182,7 +189,7 @@ rule fastqc:
 rule picard:
     input:
         bam = output_bam,
-        #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam",
+        #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam",
         reflat = reflat_file
     output:
         out_folder + "{sample}/qc/{sample}.RNASeqMetrics"
@@ -199,21 +206,44 @@ rule picard:
 rule samtools:
     input:
         output_bam
-        #out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam"
+        #out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
     output:
         idx = out_folder + "{sample}/qc/{sample}.idxstat.txt",
         flag = out_folder +"{sample}/qc/{sample}.flagstat.txt"
-        #bai = out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam.bai"
+        #bai = out_folder + "{sample}/pbmm2/{sample}.aligned.bam.bai"
     shell:
         "ml samtools;"
         "samtools index {input};"
         "samtools flagstat {input} > {output.flag};"
         "samtools idxstat {input} > {output.idx}"
 
+## get read length distributions
+rule read_lengths:
+    input:
+        output_bam
+    output:
+        mapped = out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt",
+        unmapped = out_folder + "{sample}/qc/{sample}.unmapped.readlengths.txt"
+    shell:
+        "ml samtools; ml bioawk;"
+        "samtools view -F 4 {input} | bioawk -c sam '{{print length($seq)}}' > {output.mapped}; "
+        "samtools view -f 4 {input} | bioawk -c sam '{{print length($seq)}}' > {output.unmapped}"
+
+rule collate_lengths:
+    input:
+        expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample = samples)
+    output:
+        out_folder + data_code + "_read_lengths_collated.tsv.gz"    
+    params:
+        script = "scripts/collate_read_lengths.R"
+    shell:
+        "ml {R_VERSION};"
+        "Rscript {params.script} -o {output}"
 
 # multiqc, version 1.8.dev0 works with rnaseqc outputs
 rule multiQC:
     input:
+        #expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample = samples),
         expand(out_folder + "{sample}/qc/{sample}.RNASeqMetrics", sample = samples),
         expand(out_folder + "{sample}/qc/{sample}.metrics.tsv", sample = samples),
         expand(out_folder + "{sample}/qc/{sample}.flagstat.txt", sample = samples),

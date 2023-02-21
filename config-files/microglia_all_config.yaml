@@ -22,6 +22,8 @@ genome_code:
         "GRCh38_primary"
 gtf_code:
         "GENCODE_v38"
+ref_fasta:
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.transcripts.fa.gz"
 out_folder:
         "results/"
 

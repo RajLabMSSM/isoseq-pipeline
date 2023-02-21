@@ -69,6 +69,8 @@ novel_f <- read_fasta(novel_fasta)
 message(" * Annotated reference contains ", length(anno_f), " transcripts" )
 message(" * Novel reference contains ", length(novel_f), " transcripts")
 
+#save.image("combine_debug.RData")
+
 # extract novel transcripts from novel GTF and add to annotated GTF
 # must be agnostic to how novel transcripts are named
 novel_tx_id <- setdiff(novel_g$transcript_id, anno_g$transcript_id)
@@ -79,13 +81,29 @@ tx2gene <- data.frame(gene_id = novel_g$gene_id, transcript_id = novel_g$transcr
 if(!novel_genes){
     message(" * removing novel genes")
     tx_id_to_add <- filter(tx2gene, !gene_id %in% novel_gene_id & transcript_id %in% novel_tx_id) %>% pull(transcript_id)
+    genes_to_add <- c()
 }else{
     message(" * keeping novel genes")
+    # stringtie doesn't create a "gene" entry for its novel genes - we need to create these and add them to the resulting GTF
+    ng <- novel_g[ novel_g$gene_id %in% novel_gene_id ]
+    
+    # get start and end coordinates for each novel gene
+    ng_df <- data.frame(gene = ng$gene_id, chr = seqnames(ng), start = start(ng), end = end(ng ), strand = strand(ng) )%>% 
+        group_by(gene, chr, strand) %>% summarise( start = min(start), end = max(end) )
+    
+    ng_gr <- GenomicRanges::GRanges(seqnames = ng_df$chr, 
+        ranges = IRanges(ng_df$start, ng_df$end), gene_id = ng_df$gene, 
+        type = "gene", source = "PacBio", strand = ng_df$strand) 
     tx_id_to_add <- filter(tx2gene, transcript_id %in% novel_tx_id) %>% pull(transcript_id)
-}
-message(" * adding ", length(tx_id_to_add), " novel transcripts to the annotation")
+    # when including novel genes, need the "gene" entry in the GTF
+    }
+message(" * adding ", length(tx_id_to_add), " novel transcripts and ", length(ng_gr$gene_id), " genes to the annotation")
 
 to_add_g <- novel_g[ novel_g$transcript_id %in% tx_id_to_add ]
+
+if( novel_genes){
+    to_add_g <- c(to_add_g, ng_gr)
+}
 
 to_add_f <- novel_f[ tx_id_to_add ]
 

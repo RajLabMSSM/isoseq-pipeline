@@ -1,5 +1,6 @@
 library(optparse)
-
+# Filter SQANTI classification by set of rules
+# Jack Humphrey
 option_list <- list(
     make_option(c('--sqanti', '-s' ), help = "the SQANTI classifications", default = ""),
     make_option(c('--fasta', '-f' ), help = "the FASTA sequences", default = ""),
@@ -86,10 +87,8 @@ post <- pre %>%
     structural_category == "full splice match" ~ TRUE,
     structural_category != "full splice match" & 
       RTS_stage == FALSE & # no RT-switching junction
-      #min_sample_cov >= 5 & min_cov >= 50 & # each junction supported by at least 5 reads in at least 10 short read samples.
       ( 
         diff_to_gene_TTS == 0 | # has an annotated TTS - in GENCODE v30
-        #fsm_TTS_match == TRUE | # has an annotated TTS
         (N_A_downstream_TTS < 6 & perc_A_downstream_TTS < 60 & rc_score <= 15) # or if not, TTS is low A content
       ) ~ TRUE,
     TRUE ~ FALSE

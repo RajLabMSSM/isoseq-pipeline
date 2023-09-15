@@ -13,12 +13,21 @@ metadata = config["metadata"]
 data_code = config["data_code"]
 out_folder = config["out_folder"]
 
+# relax sample filtering
+min_samples = config["min_samples"]
+
 # read in metadata
 meta_df = pd.read_excel(metadata)
 samples = meta_df['sample']
 
 metadata_dict = meta_df.set_index("sample").T.to_dict()
 #isoquant = "/sc/arion/projects/ad-omics/data/software/IsoQuant/isoquant.py"
+
+if "short_read_bam_path" in meta_df.columns:
+    print("Running hybrid assembly mode")
+else:
+    print("Running in long-read-only mode")
+
 
 #stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.Linux_x86_64/stringtie"
 stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.compiled/stringtie"
@@ -32,8 +41,8 @@ merge_threads = "4"
 sqanti_threads = "8"
 
 # sort out file prefixes
-#run_code = config["run_code"]
-run_code = "stringtie2"
+run_code = config["run_code"]
+#run_code = "stringtie2"
 stringtie_prefix = out_folder + "{sample}/" + run_code + "/{sample}"
 
 prefix = out_folder + run_code + "/" + data_code
@@ -84,9 +93,11 @@ rule run_stringtie:
         gtf = stringtie_prefix + ".stringtie.gtf"
     run:
         if "short_read_bam_path" in metadata_dict[wildcards.sample].keys():
+            # hybrid assembly of long and short reads
             short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
         else:
+            # long read only
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")
 
 rule merge_stringtie:
@@ -120,7 +131,7 @@ rule stringtie_filter:
     params:
         script = "scripts/stringtie_filter.R",
         prefix = miss_prefix,
-        min_samples = 2, # eventually put in config
+        min_samples = min_samples, # eventually put in config
         min_reads = 0 # FPKM
     shell:
         "ml {R_VERSION};"
@@ -168,6 +179,7 @@ rule SQANTI:
         " {params.gtf} {ref_genome} "
 
 ## filter SQANTI
+# because stringtie outputs FPKMs rather than counts and TPMs I had to make a separate filtering script
 rule filter_sqanti:
     input:
         #counts = miss_prefix + "_miss_counts.csv",
@@ -182,7 +194,7 @@ rule filter_sqanti:
         sqanti = filter_prefix + "_filter_sqanti_classification.tsv",
         fasta =  filter_prefix + "_filter_sqanti.fasta"
     params:
-        script = "scripts/filter_sqanti.R"
+        script = "scripts/filter_sqanti_stringtie.R"
     shell:
         "ml R/4.0.3; Rscript {params.script} --counts {input.tpm} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
 

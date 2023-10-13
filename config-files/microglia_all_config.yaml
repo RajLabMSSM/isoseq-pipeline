@@ -1,0 +1,30 @@
+prep:
+    "pacbio"
+data_code:
+        "raj_roussos_0922_stringtie_mix"
+run_code:
+        "stringtie_mix"
+metadata:
+        "/sc/arion/projects/als-omics/microglia_isoseq/microglia_isoseq_data_paths.xlsx"
+        #"/sc/arion/projects/als-omics/microglia_isoseq/microglia_isoseq_sample_metadata.xlsx"
+        #"/sc/arion/projects/als-omics/microglia_isoseq/test_isoseq_metadata.xlsx"
+ref_genome:
+        # omit the .fa
+        #"/sc/arion/projects/ad-omics/data/references/hg38_reference/hg38"
+        # reference used to map with pbmm2
+        #"/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.mm"
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome" 
+ref_gtf:
+        # cannot be gzipped
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.primary_assembly.annotation.gtf"
+        #"/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.gtf"
+genome_code:
+        "GRCh38_primary"
+gtf_code:
+        "GENCODE_v38"
+ref_fasta:
+        "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.transcripts.fa.gz"
+out_folder:
+        "results/"
+
+

@@ -14,6 +14,9 @@
 - [cDNA_cupcake](https://github.com/Magdoll/cDNA_Cupcake)
 - [SQUANTI2](https://github.com/Magdoll/SQANTI2)
 - [gtfToGenePred](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/)
+
+[2pass tools](https://www.biorxiv.org/content/10.1101/2020.05.27.118679v1.full.pdf) - look into
+
 ## Conda recipe
 
 ```
@@ -112,6 +115,13 @@ Transcript assembly/collapse
 
 
 * [IsoAnnotLite - annotate novel isoforms from PacBio reads](http://tappas.org/what-if-i-come-from-pacbio/)
+
+* [MusTA](https://www.biorxiv.org/content/10.1101/2020.07.15.199851v1.full.pdf)
+
+  pipeline that uses minimap2 for alignment, custom R scripts for merging transcripts between samples and SQANTI for filtering.
+
+* [ULTRA - long read aligner, purports to be more accurate than minimap2 on short exons](https://github.com/ksahlin/ultra)
+
 
 ## Papers
 

@@ -4,7 +4,7 @@ import os
 # stringtie2 pipeline
 # uses hybrid assembly of long and short read RNA-seq
 R_VERSION = "R/4.0.3"
-shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml R/4.0.3;")
+shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml {R_VERSION};")
 
 ref_genome = config["ref_genome"] + ".fa"
 ref_gtf = config["ref_gtf"]
@@ -28,7 +28,7 @@ if "short_read_bam_path" in meta_df.columns:
 else:
     print("Running in long-read-only mode")
 
-
+stringtie_mode = config["stringtie_mode"]
 #stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.Linux_x86_64/stringtie"
 stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.compiled/stringtie"
 
@@ -52,6 +52,19 @@ sqanti_folder = out_folder + run_code + "/SQANTI/"
 filter_prefix = out_folder + run_code + "/filter2/" + data_code
 combine_prefix = out_folder + run_code + "/combine/" + data_code + "_combined"
 
+
+## INDIVIDUAL MODE - each sample treated separately
+if stringtie_mode == "individual":
+    print(" assembling each sample separately")
+    quant_input = prefix + "_all_samples_merged_stringtie.gtf" 
+
+## COMBINED MODE - all samples combined first and stringtie run on the total set of reads
+if stringtie_mode == "combined":
+    print(" concatenating all samples before assembly")
+    quant_input = prefix + "_all_groups_merged_stringtie.gtf"
+    groups = config["groups"]
+
+
 #cpat_prefix = out_folder + "stringtie/CPAT/" + data_code
 #cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
 
@@ -63,8 +76,11 @@ combine_prefix = out_folder + run_code + "/combine/" + data_code + "_combined"
 
 junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read_junctions/junctions/"
 
+
+
 rule all:
     input:
+        #quant_input
         gtf_out_files = expand( "{gtf_prefix}.sorted.gtf.gz", gtf_prefix = [ filter_prefix + "_filter_sqanti.cds",  combine_prefix ] )
         #sqanti_prefix + "_classification.txt",
         #expand(out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab", sample = samples)
@@ -100,7 +116,7 @@ rule run_stringtie:
             # long read only
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")
 
-rule merge_stringtie:
+rule merge_stringtie_individual:
     input:
         ref = ref_gtf,
         gtf = expand( stringtie_prefix + ".stringtie.gtf", sample = samples)
@@ -109,9 +125,51 @@ rule merge_stringtie:
     shell:
       "{stringtie} -p {merge_threads} --merge -o {output} -i -G {input.ref} {input.gtf}"
 
+
+# if mode is combined, concatenate the long and short samples together for each group in groups then run stringtie on merged
+rule concat_long:
+    output:
+        bam = prefix + "_{group}_long.bam"
+    run:
+        samples_loc = list(meta_df[meta_df['condition'] == wildcards.group]['sample'])
+        files = [ out_folder + s + "/alignment/" + s + ".aligned.bam" for s in samples_loc]
+        shell("ml samtools/1.9; \
+               samtools merge --threads 8 {output.bam} {files} ;\
+               samtools index {output.bam}")
+
+rule concat_short:
+    output:
+        bam = prefix + "_{group}_short.bam"
+    run:
+        samples_loc = list(meta_df[meta_df['condition'] == wildcards.group]['sample'])
+        files = [ metadata_dict[s]["short_read_bam_path"] for s in samples_loc ]
+        shell("ml samtools/1.9; \
+               samtools merge --threads 8 {output.bam} {files} ;\
+               samtools index {output.bam}")
+
+rule stringtie_concat:
+    input:
+        gtf = ref_gtf,
+        bam_short = prefix + "_{group}_short.bam",
+        bam_long = prefix + "_{group}_long.bam"
+    output:
+        gtf = prefix + "_{group}_concatenated_stringtie.gtf"
+    shell:
+        "{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {input.bam_short} {input.bam_long}"
+
+
+rule merge_stringtie_groups:
+    input:
+        ref = ref_gtf,
+        gtf = expand( prefix + "_{group}_concatenated_stringtie.gtf", group = groups)
+    output:
+        prefix + "_all_groups_merged_stringtie.gtf"
+    shell:
+        "{stringtie} -p {merge_threads} --merge -o {output} -i -G {input.ref} {input.gtf}"
+
 rule quant_stringtie:
     input:
-        gtf = prefix + "_all_samples_merged_stringtie.gtf",
+        gtf = quant_input,
         bam = out_folder + "{sample}/alignment/{sample}.aligned.bam"
     output:
         quant = out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab"
@@ -124,7 +182,8 @@ rule quant_stringtie:
 rule stringtie_filter:
     input:
         counts = expand(out_folder + "{sample}/" + run_code + "/sample_{sample}/t_data.ctab", sample = samples),
-        gtf = prefix + "_all_samples_merged_stringtie.gtf"
+        gtf = quant_input
+#prefix + "_all_samples_merged_stringtie.gtf"
     output:
         counts = miss_prefix + "_filter_fpkm.csv",
         gtf = miss_prefix + "_filter.gtf"
@@ -134,7 +193,6 @@ rule stringtie_filter:
         min_samples = min_samples, # eventually put in config
         min_reads = 0 # FPKM
     shell:
-        "ml {R_VERSION};"
         "Rscript {params.script} --inFolder {out_folder} --runCode {run_code} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --remove_monoexons"
 
 # run SQANTI using filtered GTF
@@ -163,7 +221,7 @@ rule SQANTI:
         isoAnnotGFF = "/sc/arion/projects/ad-omics/data/references/hg38_reference/RefSeq/Homo_sapiens_GRCh38_RefSeq_78.gff3"
     shell:
         "conda activate SQANTI3.env; module purge;"
-        "ml R/4.0.3;"
+        "ml {R_VERSION};"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
@@ -196,7 +254,7 @@ rule filter_sqanti:
     params:
         script = "scripts/filter_sqanti_stringtie.R"
     shell:
-        "ml R/4.0.3; Rscript {params.script} --counts {input.tpm} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
+        "ml {R_VERSION}; Rscript {params.script} --counts {input.tpm} --input {miss_prefix} --output {filter_prefix} --sqanti {input.sqanti} --fasta {input.fasta} --gff {input.gff}"
 
 ## combine novel transcripts with annotated reference GTF 
 rule combine_transcripts:
@@ -209,7 +267,7 @@ rule combine_transcripts:
         combine_prefix + ".gtf",
         combine_prefix + ".fa"
     shell:
-        "ml R/4.0.3;"
+        "ml {R_VERSION};"
         " Rscript scripts/combine_gtf.R "
         "--annoGTF {input.anno_gtf} "
         "--annoFASTA {input.anno_fasta} "

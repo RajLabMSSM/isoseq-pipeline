@@ -33,7 +33,7 @@ mode <- "fpkm"
 
 remove_monoexons <- opt$remove_monoexons
 
-stopifnot(min_samples > 0 & min_samples < ncol(df) )
+stopifnot( min_samples < ncol(df) )
 stopifnot(min_reads > 0)
 
 # make sure input and output are valid 
@@ -79,8 +79,8 @@ if( remove_monoexons == TRUE){
 # keep all annotated transcripts
 # only keep novel if seen at least twice
 clean <- df[ 
-    ( grepl("ENST", row.names(df) ) & rowSums(df > 0) > 0 ) |
-    ( grepl("MSTRG",row.names(df) ) & rowSums(df > 0) > 1 ) 
+    ( grepl("ENST", row.names(df) ) & rowSums(df > 0) >= min_samples ) |
+    ( grepl("MSTRG",row.names(df) ) & rowSums(df > 0) >= min_samples ) 
 ,] 
 
 message( paste0( " * ", nrow(clean) , " out of ", nrow(df), " transcripts kept!" ) )

@@ -65,11 +65,8 @@ if prep == "nanopore_cdna":
 
 rule all:
     input:
-        out_folder + data_code + "_read_lengths_collated.tsv.gz"
-       #expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample = samples),
-        #out_folder + "read_lengths_collated.tsv",
-        #expand(out_folder + "{sample}/qc/{sample}.{reads}.readlengths.txt", sample = samples, reads = ["mapped", "unmapped"]),
-       out_folder + "multiqc/multiqc_report.html"
+        out_folder + data_code + "_read_lengths_collated.tsv.gz",
+        out_folder + "multiqc/multiqc_report.html"
        #expand(out_folder + "{sample}/pbmm2/{sample}.junc", sample = samples)
         #expand(output_bam
         #out_folder + "merged_bam/" + data_code + ".flnc.aligned.bam"

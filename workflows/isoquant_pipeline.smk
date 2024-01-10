@@ -1,8 +1,8 @@
 # ISOQUANT PIPELINE
-# Jack Humphrey 2021-2023
+# Jack Humphrey 2021-2024
 import pandas as pd
 import os
-
+isoquant="/sc/arion/projects/ad-omics/data/software/IsoQuant/isoquant.py"
 shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate isoquant; ml samtools; ml bedtools;")
 
 ref_fasta = config["ref_genome"] + ".fa"
@@ -10,13 +10,14 @@ ref_gtf = config["ref_gtf"]
 metadata = config["metadata"]
 data_code = config["data_code"]
 out_folder = config["out_folder"] 
+# path to YAML sample metadata
+sample_config = config["sample_config"]
 
 # read in metadata
 meta_df = pd.read_excel(metadata)
 samples = meta_df['sample']
 
 metadata_dict = meta_df.set_index("sample").T.to_dict()
-#isoquant = "/sc/arion/projects/ad-omics/data/software/IsoQuant/isoquant.py"
 
 # isoquant specific params
 matching_strategy = "precise"
@@ -38,94 +39,66 @@ rule all:
         miss_prefix + "_miss_counts.csv"
         #out_folder + "isoquant/" + data_code + "/combined_gene_counts.tsv"
 
-# write list of BAM files for isoquant
-# currently insists that each line is a sample but each sample should be separated by a blank line:
-rule write_config:
-    input:
-        bams = expand( out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam", sample = samples)
-    output:
-        config_csv = out_folder + "isoquant/" + data_code + "_isoquant_config.csv"
-    run:
-        import csv
-        # pandas magic -  name, sample description, platform, sam file        
-        bam_paths = [os.path.abspath(i) for i in input.bams]
-        with open(output.config_csv, 'w') as filehandle:
-            for i in range(len(samples)):
-                filehandle.write(bam_paths[i] + ":" + samples[i] + "\n")
-
-# create gene db from GTF
-rule create_db:
-    input:
-        gtf = ref_gtf
-    output:
-        db = os.path.splitext(ref_gtf)[0] + ".db"
-    shell:
-        "{isoquant} --genedb {input.gtf} --complete_genedb "
-
-# run isoquant
-
 rule run_isoquant:
     input:
-        db = "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v30.annotation.db",
-        bams = expand( out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam", sample = samples),
-        bais = expand( out_folder + "{sample}/pbmm2/{sample}.aligned.md.bam.bai", sample = samples),
-        bam_list = out_folder + "isoquant/" + data_code + "_isoquant_config.csv"
+        bams = expand( out_folder + "{sample}/alignment/{sample}.aligned.bam", sample = samples),
     output:
         counts = isoquant_prefix + ".transcript_model_grouped_counts.tsv",
-        tpm = isoquant_prefix + ".transcript_grouped_tpm.tsv",
+        tpm = isoquant_prefix + ".transcript_model_grouped_tpm.tsv",
         gtf = isoquant_prefix + ".extended_annotation.gtf" 
         #results/isoquant/test_isoquant4/test_isoquant4/test_isoquant4.transcript_model_grouped_counts.tsv
     shell:
-        "isoquant.py --data_type pacbio_ccs --bam_list {input.bam_list} "
-        "--read_group file_name "
+        "{isoquant} --data_type pacbio_ccs --yaml {sample_config} "
         "--reference {ref_fasta} "
-        "--genedb {input.db} --output {out_folder}isoquant/{data_code}/ "
-        "--labels {data_code} " 
+        "--complete_genedb "
+        "--genedb {ref_gtf} --output {out_folder}isoquant/{data_code}/ "
+        "--read_group file_name "
+
         #"--sqanti_output  "
         "--threads {isoquant_threads} " 
         #"--matching_strategy {matching_strategy} "
         #"--model_construction_strategy {model_strategy} "
 
-## FILTER MISSINGNESS
-# remove all transcripts with greater than X% missingness
-# currently - present in at least 2 samples
-# remove monoexonic transcripts to reduce overhead for SQANTI
-# input must be simple GFF - long GTF lines break rtracklayer
-rule filter_isoquant:
-    input:
-        counts = isoquant_prefix + ".transcript_model_grouped_counts.tsv",
-        tpm = isoquant_prefix + ".transcript_model_grouped_tpm.tsv",
-        gtf = isoquant_prefix + ".extended_annotation.gtf"
-    output:
-        counts = miss_prefix + "_miss_counts.csv",
-        tpm = miss_prefix + "_miss_tpm.csv",
-        gtf = miss_prefix + "_miss.gtf"
-    params:
-        script = "scripts/bambu_filter.R",
-        prefix = miss_prefix
-    shell:
-        "ml {R_VERSION};"
-        "Rscript {params.script} --matrix {input.counts} --gff {input.gtf} --prefix {params.prefix} --remove_monoexons --tpm"
+## FILTER MISSINGNESS 
+# remove all transcripts with greater than X% missingness 
+# currently - present in at least 2 samples 
+# remove monoexonic transcripts to reduce overhead for SQANTI 
+# input must be simple GFF - long GTF lines break rtracklayer 
+rule filter_isoquant: 
+    input: 
+        counts = isoquant_prefix + ".transcript_model_grouped_counts.tsv", 
+        tpm = isoquant_prefix + ".transcript_model_grouped_tpm.tsv", 
+        gtf = isoquant_prefix + ".extended_annotation.gtf" 
+    output: 
+        counts = miss_prefix + "_miss_counts.csv", 
+        tpm = miss_prefix + "_miss_tpm.csv", 
+        gtf = miss_prefix + "_miss.gtf" 
+    params: 
+        script = "scripts/bambu_filter.R", 
+        prefix = miss_prefix 
+    shell: 
+        "ml {R_VERSION};" 
+        "Rscript {params.script} --matrix {input.counts} --gff {input.gtf} --prefix {params.prefix} --remove_monoexons --tpm" 
 
 
 # run SQANTI using filtered GTF
 rule SQANTI:
     input:
-         gtf = miss_prefix + "_miss.gtf",
-         abundance = miss_prefix + "_miss_counts.csv"
+        gtf = miss_prefix + "_miss.gtf",
+        abundance = miss_prefix + "_miss_counts.csv"
     output:
-         out = sqanti_prefix + "_classification.txt",
-         gtf = sqanti_prefix  + "_corrected.gtf",
-         fasta = sqanti_prefix + "_corrected.fasta",
-         gff = sqanti_prefix + "_corrected.gtf.cds.gff"
+        out = sqanti_prefix + "_classification.txt",
+        gtf = sqanti_prefix  + "_corrected.gtf",
+        fasta = sqanti_prefix + "_corrected.fasta",
+        gff = sqanti_prefix + "_corrected.gtf.cds.gff"
     params:
-        sample = data_code + "_isoquant" ,
+        sample = data_code + "_isoquant",
         outDir = out_folder + "isoquant/SQANTI/",
         nCores = sqanti_threads,
         nChunks = 8,
         software= "/sc/arion/projects/ad-omics/data/software",
         #junctions = junctionArgs,
-        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'" ,
+        junctions = "\'" + junctionFolder + "/*SJ.out.tab\'",
         #genome = referenceFa + ".fa",
         intropolis = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/intropolis.v1.hg19_with_liftover_to_hg38.tsv.min_count_10.modified",
         cage = "/sc/arion/projects/ad-omics/data/references/hg38_reference/SQANTI3/hg38.cage_peak_phase1and2combined_coord.bed",
@@ -138,7 +111,7 @@ rule SQANTI:
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        " -c {params.junctions} " optional at this point
+        " -c {params.junctions} " #optional at this point
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
         " --gtf {input.gtf} "
         #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"
@@ -178,7 +151,5 @@ rule indexGFF:
         "ml tabix;"
         "{params.gff3sort} {input.gtf} | bgzip > {output.gtf};"
         "tabix {output.gtf} "
-
-
 
 

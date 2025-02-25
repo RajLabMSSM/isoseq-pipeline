@@ -20,7 +20,8 @@ sqanti_file <- opt$sqanti
 fasta_file <- opt$fasta
 counts_file <- opt$counts
 #counts_file <- paste0(input, "_miss_counts.csv")
-tpm_file <- paste0(input, "_miss_tpm.csv")
+#tpm_file <- opt$tpm
+#tpm_file <- paste0(input, "_miss_tpm.csv")
 gff_file <- opt$gff
 
 stopifnot(file.exists(counts_file) )
@@ -71,7 +72,7 @@ pre$rc_score <- calculate_rc_score(pre$seq_A_downstream_TTS)
 
 # read in counts, TPM and GTF
 counts <- read_csv(counts_file)
-tpm <- read_csv(tpm_file)
+#tpm <- read_csv(tpm_file)
 gff <- import(gff_file, format = "GFF")
 
 # filter transcripts using SQANTI settings
@@ -86,13 +87,18 @@ post <- pre %>%
   mutate( filter_pass = case_when(
     structural_category == "full splice match" ~ TRUE,
     structural_category != "full splice match" & 
-      RTS_stage == FALSE & # no RT-switching junction
+      #RTS_stage == FALSE & # no RT-switching junction - turn off for stringtie
       ( 
         diff_to_gene_TTS == 0 | # has an annotated TTS - in GENCODE v30
         (N_A_downstream_TTS < 6 & perc_A_downstream_TTS < 60 & rc_score <= 15) # or if not, TTS is low A content
       ) ~ TRUE,
     TRUE ~ FALSE
   ))
+
+
+post <- filter(post, filter_pass == TRUE)
+message( " * filtering transcripts based on SQANTI annotation" )
+message( " * kept ", nrow(post), " transcripts!" )
 
 reasons <- post %>%
   filter(filter_pass == FALSE) %>%
@@ -103,14 +109,9 @@ reasons <- post %>%
           rc = rc_score > 15)
 
 
-post <- filter(post, filter_pass == TRUE)
-message( " * filtering transcripts based on SQANTI annotation" )
-message( " * kept ", nrow(post), " transcripts!" )
-
-
 # filter output files
 counts <- counts[ counts$id %in% post$isoform,]
-tpm <- tpm[ tpm$id %in% post$isoform,] 
+#tpm <- tpm[ tpm$id %in% post$isoform,] 
 gff <- gff[ gff$transcript_id %in% post$isoform ]
 
 # read in FASTA and filter
@@ -125,7 +126,7 @@ write_tsv(post, file = sqanti_out)
 message( " * writing to ", counts_out )
 write_csv(counts, file = counts_out)
 message(" * writing to ", tpm_out)
-write_csv(tpm, file = tpm_out)
+#write_csv(tpm, file = tpm_out)
 message(" * writing to ", gff_out)
 export(gff, con = gff_out, format = "GTF")
 message(" * writing to ", fasta_out )

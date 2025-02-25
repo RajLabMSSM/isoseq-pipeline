@@ -52,6 +52,9 @@ sqanti_folder = out_folder + run_code + "/SQANTI/"
 filter_prefix = out_folder + run_code + "/filter2/" + data_code
 combine_prefix = out_folder + run_code + "/combine/" + data_code + "_combined"
 
+groups = config["groups"]
+
+
 
 ## INDIVIDUAL MODE - each sample treated separately
 if stringtie_mode == "individual":
@@ -62,8 +65,11 @@ if stringtie_mode == "individual":
 if stringtie_mode == "combined":
     print(" concatenating all samples before assembly")
     quant_input = prefix + "_all_groups_merged_stringtie.gtf"
+ ## CAKE AND EAT IT MODE - MERGE THE TWO APPROACHES INTO SINGLE GTF
+if stringtie_mode == "cake":
+    print(" running stringtie both individually and by group and then merging")
+    quant_input = prefix + "_all_groups_individual_merged_stringtie.gtf"
     groups = config["groups"]
-
 
 #cpat_prefix = out_folder + "stringtie/CPAT/" + data_code
 #cpat_folder = "/sc/arion/projects/ad-omics/data/references/CPAT"
@@ -123,7 +129,7 @@ rule merge_stringtie_individual:
     output:
         prefix + "_all_samples_merged_stringtie.gtf"
     shell:
-      "{stringtie} -p {merge_threads} --merge -o {output} -i -G {input.ref} {input.gtf}"
+      "{stringtie} -p {merge_threads} --merge -f 0 -o {output} -i -G {input.ref} {input.gtf}"
 
 
 # if mode is combined, concatenate the long and short samples together for each group in groups then run stringtie on merged
@@ -147,7 +153,7 @@ rule concat_short:
                samtools merge --threads 8 {output.bam} {files} ;\
                samtools index {output.bam}")
 
-rule stringtie_concat:
+rule stringtie_groups:
     input:
         gtf = ref_gtf,
         bam_short = prefix + "_{group}_short.bam",
@@ -165,7 +171,17 @@ rule merge_stringtie_groups:
     output:
         prefix + "_all_groups_merged_stringtie.gtf"
     shell:
-        "{stringtie} -p {merge_threads} --merge -o {output} -i -G {input.ref} {input.gtf}"
+        "{stringtie} -p {merge_threads} --merge -f 0 -o {output} -i -G {input.ref} {input.gtf}"
+
+rule merge_stringtie_cake:
+    input:
+        ref = ref_gtf,
+        gtf_individual =  expand( stringtie_prefix + ".stringtie.gtf", sample = samples),
+        gtf_groups = expand( prefix + "_{group}_concatenated_stringtie.gtf", group = groups)
+    output:
+        prefix + "_all_groups_individual_merged_stringtie.gtf"
+    shell:
+        "{stringtie} -p {merge_threads} --merge -f 0 -o {output} -i -G {input.ref} {input.gtf_individual} {input.gtf_groups}"
 
 rule quant_stringtie:
     input:

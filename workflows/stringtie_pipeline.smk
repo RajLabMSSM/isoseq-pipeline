@@ -3,7 +3,7 @@ import os
 
 # stringtie2 pipeline
 # uses hybrid assembly of long and short read RNA-seq
-R_VERSION = "R/4.0.3"
+R_VERSION = "R/4.2.0"
 shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate snakemake; ml {R_VERSION};")
 
 ref_genome = config["ref_genome"] + ".fa"
@@ -19,7 +19,7 @@ min_samples = config["min_samples"]
 # read in metadata
 meta_df = pd.read_excel(metadata)
 samples = meta_df['sample']
-
+print(samples)
 metadata_dict = meta_df.set_index("sample").T.to_dict()
 #isoquant = "/sc/arion/projects/ad-omics/data/software/IsoQuant/isoquant.py"
 
@@ -114,10 +114,10 @@ rule run_stringtie:
     output:
         gtf = stringtie_prefix + ".stringtie.gtf"
     run:
-        if "short_read_bam_path" in metadata_dict[wildcards.sample].keys():
-            # hybrid assembly of long and short reads
-            short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
-            shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
+        if "short_read_bam_path" in metadata_dict[wildcards.sample].keys() and not pd.isna(metadata_dict[wildcards.sample]["short_read_bam_path"]):
+                # hybrid assembly of long and short reads
+                short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
+                shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
         else:
             # long read only
             shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -L -G {input.gtf} {input.bam}")

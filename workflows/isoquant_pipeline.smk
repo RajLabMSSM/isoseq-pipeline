@@ -28,10 +28,27 @@ R_VERSION = "R/4.2.2"
 
 isoquant_prefix = out_folder + "isoquant/" + data_code + "/" + data_code + "/" + data_code
 miss_prefix = out_folder + "isoquant/filter1_missingness/" + data_code
-sqanti_prefix = out_folder + "isoquant/SQANTI/" + data_code
+sqanti_prefix = out_folder + "isoquant/SQANTI/" + data_code + "_isoquant"
 filter_prefix = out_folder + "isoquant/filter2_sqanti/" + data_code
 
-junctionFolder = "/sc/arion/projects/als-omics/microglia_isoseq/short_read/junctions"
+junctionFolder = config["junctionFolder"]
+
+# check all files in sample config exist
+import yaml
+import io
+with open(sample_config, 'r') as stream:
+    data_loaded = yaml.safe_load(stream)
+
+short_read = data_loaded[1]['illumina bam']
+long_read = data_loaded[1]['long read files']
+all_files = short_read + long_read
+file_check = [os.path.isfile(f) for f in all_files]
+
+if not all(file_check):
+    print(" * missing files in sample config!")
+    missing_files = [all_files[i] for i in [j for j in range(len(file_check)) if not file_check[j]]]
+    print(missing_files)
+    exit(1)
 
 rule all:
     input: 
@@ -82,10 +99,14 @@ rule filter_isoquant:
 
 
 # run SQANTI using filtered GTF
+# July 16 2024 - SQANTI breaks with filtered GTF, try unfiltered isoquant GTF
 rule SQANTI:
     input:
-        gtf = miss_prefix + "_miss.gtf",
-        abundance = miss_prefix + "_miss_counts.csv"
+        abundance = isoquant_prefix + ".transcript_model_grouped_counts.tsv",
+        #tpm = isoquant_prefix + ".transcript_model_grouped_tpm.tsv",
+        gtf = isoquant_prefix + ".extended_annotation.gtf"
+        #gtf = miss_prefix + "_miss.gtf",
+        #abundance = miss_prefix + "_miss_counts.csv"
     output:
         out = sqanti_prefix + "_classification.txt",
         gtf = sqanti_prefix  + "_corrected.gtf",
@@ -111,7 +132,7 @@ rule SQANTI:
         "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
         " --dir {params.outDir} "
         " --out {params.sample} "
-        " -c {params.junctions} " #optional at this point
+        #" -c {params.junctions} " #optional at this point
         " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
         " --gtf {input.gtf} "
         #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"

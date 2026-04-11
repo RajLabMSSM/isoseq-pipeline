@@ -148,8 +148,10 @@ message(" * importing GFF")
 gff_file_ext <- tools::file_ext(gff_file)
 gff <- import(gff_file, format = gff_file_ext)
 
+save.image("debug.RData")
+
 # remove duplicate entries - bug with isoquant?
-gff <- unique(gff)
+#gff <- unique(gff)
 
 #save.image("debug.RData")
 

@@ -1,0 +1,190 @@
+================================================================================
+isoseq-pipeline — summary of changes (2026-06-09)
+Author of changes: Brooke Friedman (with Claude)
+================================================================================
+
+GOAL
+----
+Turn the QC-only Snakefile into ONE consolidated pipeline that, in a single
+`snakemake` submission, runs QC -> bambu + isoquant + stringtie3 on ONT (or
+PacBio) long-read data, using a Join & Call (pooled-per-group) discovery strategy
+for finding rare novel transcripts.
+
+Key papers this design follows:
+  - Jetzinger et al. 2025  "To join or not to join" (Join & Call vs Call & Join)
+  - Prjibelski et al. 2023 (IsoQuant)
+  - Chen et al. 2023       (Bambu, NDR)
+  - Shinder et al. 2025    (StringTie3)
+
+NOTE: old/Snakefile was NOT touched (kept as reference).
+
+
+================================================================================
+1. ARCHITECTURE: one consolidated Snakefile (Path A)
+================================================================================
+Before: each workflow (.smk) was a STANDALONE Snakefile — its own shell.prefix,
+its own config parsing, its own `rule all`. They were meant to be run one at a
+time (`snakemake -s workflows/bambu_pipeline.smk ...`).
+
+Problem with `include:`-ing all four into one Snakefile:
+  - shell.prefix is GLOBAL in Snakemake — only one can be active. Four files with
+    four different conda envs => the last one silently wins for ALL rules.
+  - Two `rule all`s, and duplicate rule names (SQANTI/indexGFF/filter_sqanti in
+    all three) => hard parse-time errors.
+
+Fix (mirrors how old/Snakefile already worked = ONE file, ONE prefix, ONE
+rule all, unique rule names):
+  - The Snakefile now owns the SINGLE shell.prefix (conda setup + activate the
+    default QC env `isoseq-pipeline`).
+  - The Snakefile parses config ONCE; the included .smk inherit all names
+    (out_folder, samples, ref_gtf, groups, group_bams(), etc.).
+  - The Snakefile has ONE `rule all`.
+  - Each included .smk no longer defines shell.prefix / config / rule all; it only
+    adds its tool-specific constants + rules, and each non-QC rule activates its
+    own conda env inline (`conda activate snakemake` / `conda activate isoquant`).
+
+Snakemake still sequences everything by file dependency: the assemblers list the
+aligned BAMs as input, so QC runs first automatically (no wrapper needed).
+
+
+================================================================================
+2. JOIN & CALL, POOLED PER GROUP (Jetzinger et al. 2025)
+================================================================================
+Discovery is pooled PER GROUP (e.g. GFP vs TDP, CTRL vs TDP) so condition-specific
+rare novel isoforms are not diluted by the other group.
+
+Group membership is derived in the Snakefile:
+    groups        = config['groups']                     # e.g. [GFP, TDP]
+    sample_groups = {g: [s for s in samples if s.startswith(g)]}
+i.e. a sample belongs to the group whose name it starts with (GFP_1 -> GFP,
+TDP1 -> TDP, CTRL3 -> CTRL). Helper group_bams(group) returns that group's BAMs.
+
+Per tool:
+  - Bambu     : the group's BAMs go to ONE bambu() call (joint by default).
+  - IsoQuant  : the group's BAMs go to ONE run (discovery pools all reads;
+                --read_group file_name still gives per-sample counts).
+  - StringTie3: the group's BAMs are MERGED into one pooled BAM, then assembled
+                once (StringTie's native -L-per-sample + --merge is Call & Join,
+                so we pool first to get Join & Call).
+
+
+================================================================================
+3. CONFIG-DRIVEN FLEXIBILITY (ONT vs PacBio, stringtie mode)
+================================================================================
+  - `prep` (already in config) drives platform:
+        nanopore_cdna / nanopore_direct -> IsoQuant --data_type nanopore (k14)
+        pacbio                          -> IsoQuant --data_type pacbio_ccs + --fl_data
+    (minimap2 preset in qc already keyed off `prep`.)
+  - `stringtie_mode` (config):
+        "long_read"  -> stringtie3 -L            (default)
+        "hybrid"     -> stringtie3 --mix         (also pools the short-read BAMs;
+                                                  needs short_read_bam_path column)
+  - Bambu `NDR` is wired as an OPTIONAL knob (default = auto). Raise it toward 1.0
+    for more sensitive rare-isoform discovery.
+
+
+================================================================================
+4. FILE-BY-FILE CHANGES
+================================================================================
+
+Snakefile  (rewritten)
+  - Single shell.prefix (conda setup + activate isoseq-pipeline).
+  - Config parsed once; out_folder now = config['out_folder'] + run_code + "/"
+    (so it reads the existing results/<run_code>/ BAMs — this was previously
+    inconsistent between qc and the downstream files).
+  - groups / sample_groups / group_bams() defined here.
+  - includes all four workflows; ONE rule all with QC + per-group assembler targets
+    (assembler-only scope for now; SQANTI/filter/combine deliberately left out).
+  - keeps collapseAnnotationGlobal (genes_gtf for RNA-SeQC).
+
+workflows/qc_pipeline.smk  (rewritten header; rules unchanged in behaviour)
+  - Removed its own shell.prefix + duplicate config parsing (now inherited).
+  - Added prep == "pacbio" branch for the minimap preset.
+  - FIXED collate_lengths: now passes `--inFolder {out_folder}` so the read-length
+    collation actually finds the per-sample files (see #5).
+
+workflows/bambu_pipeline.smk  (rewritten)
+  - No shell.prefix / config / rule all.
+  - Renamed rules: create_annotation -> bambu_create_annotation,
+                   run_bambu        -> bambu_run   (avoids cross-file collisions).
+  - bambu_run takes a {group} wildcard; input = group_bams(group) (Join & Call).
+  - Output: <out>/bambu/<group>/<data_code>_<group>_extended_annotations.gtf (+ counts, RData).
+  - Each rule: `conda activate snakemake; ml R/4.2.2`.
+  - Removed downstream SQANTI/filter/combine/CPAT/TransDecoder/SUPPA (out of scope;
+    still available in git history / RajLabMSSM upstream / old/).
+
+workflows/isoquant_pipeline.smk  (rewritten)
+  - No shell.prefix / config / rule all; removed the sample_config YAML + file-check
+    block (we don't use a YAML).
+  - isoquant_run takes a {group} wildcard; input = group_bams(group).
+  - Runs IsoQuant directly on the aligned BAMs: `--bam <group bams> --read_group file_name`.
+  - `--data_type` and `--fl_data` are config-driven via `prep` (nanopore default).
+  - Output: <out>/isoquant/<group>/<data_code>_<group>/<data_code>_<group>.extended_annotation.gtf
+            (+ .transcript_model_grouped_counts.tsv, _grouped_tpm.tsv).
+  - Each rule: `conda activate isoquant; ml samtools; ml bedtools`.
+
+workflows/stringtie_pipeline.smk  (rewritten)
+  - No shell.prefix / config / rule all.
+  - Uses StringTie3 binary: stringtie-3.0.0.Linux_x86_64/stringtie (was 2.2.1).
+  - NEW rule stringtie_pool_long_bams: samtools-merge the group's BAMs -> one pooled
+    BAM (the Join & Call unit).
+  - NEW rule stringtie_pool_short_bams: same for short reads (hybrid mode only).
+  - stringtie_run: single assembly on the pooled BAM; -L (long_read) or --mix (hybrid),
+    chosen by config stringtie_mode.
+  - Output: <out>/stringtie3/<group>/<data_code>_<group>.stringtie.gtf
+  - Removed downstream merge/quant/SQANTI/filter/combine (out of scope).
+
+scripts/collate_read_lengths.R  (edited)
+  - Added `--inFolder` option (default "."). list.files now searches that root
+    recursively. See #5.
+
+scripts/bambu_run.R  (edited)
+  - Added optional `--NDR` option (default NULL = bambu auto-recommends).
+  - Passed NDR = ndr into bambu(). Comment explains: higher NDR (->1.0) = more
+    sensitive = more novel transcripts, for rare-isoform discovery.
+
+
+================================================================================
+5. BUG FIX: empty *_read_lengths_collated.tsv.gz
+================================================================================
+scripts/collate_read_lengths.R used list.files(recursive=TRUE) relative to the
+directory Snakemake was launched from (the pipeline dir), not the results folder.
+It therefore matched 0 files and silently wrote an empty 20-byte gzip — the rule
+"succeeded" but produced nothing.
+
+Fix: the script now accepts --inFolder, and the qc rule passes --inFolder
+<out_folder> so it searches results/<run_code>/ and finds the per-sample
+*.readlengths.txt files.
+
+This file feeds NOTHING downstream (it's only a QC plotting artifact, not consumed
+by multiqc or any assembler/Rmd), so it can be re-run on its own with no other
+re-runs needed. To regenerate for an existing cohort, force just that rule, e.g.:
+    snakemake -s Snakefile --configfile <cohort>.yaml \
+        --forcerun collate_lengths \
+        <out>/<data_code>_read_lengths_collated.tsv.gz
+
+
+================================================================================
+6. ENVIRONMENT CLEANUP
+================================================================================
+Deleted /sc/arion/projects/als-omics/conda/envs/isoseq-pipeline-2026 — it was an
+aborted/empty conda env (no bin/, no conda-meta/, just stray lib/share leftovers).
+No shared envs were modified. The working env remains `isoseq-pipeline` (261 pkgs).
+
+
+================================================================================
+7. VALIDATION DONE
+================================================================================
+`snakemake -n` (dry-run) builds a clean DAG for BOTH cohorts:
+  - sun_tdp (v3, groups GFP/TDP) and tdpkd (v2, groups CTRL/TDP).
+  - Plans exactly: bambu_create_annotation x1, bambu_run x2, isoquant_run x2,
+    stringtie_pool_long_bams x2, stringtie_run x2  (= per-group Join & Call).
+  - QC rules are skipped because both cohorts' aligned BAMs already exist under
+    results/<run_code>/ — confirming the out_folder/run_code fix.
+
+STILL TODO (not done in this change):
+  - Actually run the assemblers (submit via bsub).
+  - Re-run collate_lengths for both cohorts to replace the empty files.
+  - Downstream SQANTI/filter/combine when you're ready (re-add + namespace per tool).
+  - If you want StringTie hybrid on tdpkd, add short_read_bam_path to its metadata.
+================================================================================

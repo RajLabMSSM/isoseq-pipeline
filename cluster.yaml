@@ -1,6 +1,8 @@
 # cluster.yaml
-# set job submission parameters for each rule
-# himem - default should be "", "-R himem" if you need the himem nodes
+# LSF job submission parameters for isoseq-pipeline
+# Place this file in the pipeline directory (where the Snakefile lives)
+# Always run snakejob from the pipeline directory
+
 __default__:
   queue: express
   cores: 8
@@ -10,117 +12,185 @@ __default__:
   output: logs/{rule}:{wildcards}.stdout
   error: logs/{rule}:{wildcards}.stderr
   himem: ""
+
+nanopore_alignment:
+  cores: 8
+  mem: 32000
+  time: 360
+  queue: premium
+  himem: "-R himem"
+
+sam_to_bam:
+  cores: 8
+  mem: 16000
+  time: 120
+  queue: express
+
+rnaseqc:
+  cores: 4
+  mem: 16000
+  time: 120
+  queue: express
+
+picard:
+  cores: 4
+  mem: 16000
+  time: 120
+  queue: express
+
+fastqc:
+  cores: 8
+  mem: 3000
+  time: 360
+  queue: express
+
+read_lengths:
+  cores: 4
+  mem: 8000
+  time: 60
+  queue: express
+
+collate_lengths:
+  cores: 1
+  mem: 8000
+  time: 60
+  queue: express
+
+multiQC:
+  cores: 1
+  mem: 8000
+  time: 60
+  queue: express
+
+collapseAnnotationGlobal:
+  cores: 1
+  mem: 8000
+  time: 120
+  queue: express
+
+samtools_qc:
+  cores: 4
+  mem: 3000
+  time: 60
+  queue: express
+
 run_stringtie:
   cores: 4
   mem: 6000
   time: 720
+
 merge_stringtie:
   cores: 8
   mem: 3000
   time: 720
+
 talon_filter:
   cores: 1
   mem: 30000
   queue: premium
   time: 720
   himem: "-R himem"
+
 talon_label_reads:
   cores: 8
   mem: 3000
   time: 500
+
 cupcake_collapse:
-    cores: 16
-    mem: 24000
-    time: '144:00'
-    queue: premium
-    himem: "-R himem"
+  cores: 16
+  mem: 24000
+  time: '144:00'
+  queue: premium
+  himem: "-R himem"
+
 run_bambu:
   cores: 8
   mem: 24000
   time: 72:00
   queue: premium
   himem: "-R himem"
+
 run_isoquant:
   cores: 8
   mem: 20000
   time: 144:00
   queue: premium
   himem: "-R himem"
+
 run_talon_simul:
   cores: 8
   mem: 24000
   time: 72:00
   queue: premium
   himem: "-R himem"
+
 merge_flnc_bams:
   cores: 1
   mem: 3000
   time: 1440
   queue: premium
+
 chain_samples:
-    time: '180'
-    mem: 3000
-    cores: 30
+  time: '180'
+  mem: 3000
+  cores: 30
+
 samtools:
-    cores: 8
-    mem: 3000
-    time: 60
+  cores: 8
+  mem: 3000
+  time: 60
+
 minimap:
-    cores: 16
-    mem: 3000
-    time: 360
-nanopore_alignment:
-    cores: 4
-    mem: 24000
-    time: 360
-    himem: "-R himem"
+  cores: 16
+  mem: 3000
+  time: 360
+
 SQANTI:
-    time: 720
-    mem: 3000
-    cores: 8
+  time: 720
+  mem: 3000
+  cores: 8
+
 TAMA_collapse:
-    cores: 16
-    mem: 3000
-    time: 60
+  cores: 16
+  mem: 3000
+  time: 60
+
 CCS:
-   time: 72:00
-   queue: 'long'
-   mem: 25000
-   cores: 36
+  time: 72:00
+  queue: 'long'
+  mem: 25000
+  cores: 36
+
 LIMA:
-   cores: 2
-   mem: 12000
+  cores: 2
+  mem: 12000
+
 refine:
-   cores: 4
-   mem: 25000
+  cores: 4
+  mem: 25000
+
 align_flnc_bam:
-   cores: 16
-   mem: 3000
-   time: 720
+  cores: 16
+  mem: 3000
+  time: 720
+
 split_flnc_bam:
-    cores: 1
-    mem: 3000
-    time: 719
+  cores: 1
+  mem: 3000
+  time: 719
+
 split_unmapped_flnc_bam:
-    cores: 1
-    mem: 3000
-    time: 719
+  cores: 1
+  mem: 3000
+  time: 719
+
 isoseq3_cluster:
-   queue: premium
-   cores: 28
-   mem: 3000
-   time: 2880
-   #himem: "-R himem"
+  queue: premium
+  cores: 28
+  mem: 3000
+  time: 2880
+
 demultiplex_abundances:
-    cores: 16
-    mem: 3000
-    time: '720'
-    #himem: "-R himem"
-sam_to_bam:
-    cores: 4
-    mem: 3000
-    time: 360
-fastqc:
-    cores: 8
-    mem: 3000
-    time: 360
+  cores: 16
+  mem: 3000
+  time: '720'

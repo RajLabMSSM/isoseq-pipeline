@@ -30,7 +30,8 @@ else:
 
 stringtie_mode = config["stringtie_mode"]
 #stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.Linux_x86_64/stringtie"
-stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.compiled/stringtie"
+#stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-2.2.1.compiled/stringtie"
+stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-3.0.0.Linux_x86_64/stringtie"
 
 salmon = "/sc/arion/projects/ad-omics/data/software/salmon-1.9.0_linux_x86_64/bin/salmon"
 gffread = "/hpc/packages/minerva-common/cufflinks/2.2.1/bin/gffread"
@@ -38,7 +39,7 @@ gffread = "/hpc/packages/minerva-common/cufflinks/2.2.1/bin/gffread"
 stringtie_threads = "4"
 merge_threads = "4"
 # sqanti
-sqanti_threads = "8"
+sqanti_threads = "4"
 
 # sort out file prefixes
 run_code = config["run_code"]
@@ -117,6 +118,8 @@ rule run_stringtie:
         if "short_read_bam_path" in metadata_dict[wildcards.sample].keys() and not pd.isna(metadata_dict[wildcards.sample]["short_read_bam_path"]):
                 # hybrid assembly of long and short reads
                 short_read_bam = metadata_dict[wildcards.sample]["short_read_bam_path"]
+    # adding nascent RNA detection with --nasc
+    # v11 - dropped --nasc because it makes some weird isoforms that Salmon can't quantify, like cryptic STMN2
                 shell("{stringtie} -p {stringtie_threads} -o {output.gtf} -G {input.gtf} --mix {short_read_bam} {input.bam}")
         else:
             # long read only
@@ -209,7 +212,7 @@ rule stringtie_filter:
         min_samples = min_samples, # eventually put in config
         min_reads = 0 # FPKM
     shell:
-        "Rscript {params.script} --inFolder {out_folder} --runCode {run_code} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples} --remove_monoexons"
+        "Rscript {params.script} --inFolder {out_folder} --runCode {run_code} --gff {input.gtf} --prefix {params.prefix} --min_samples {params.min_samples}"
 
 # run SQANTI using filtered GTF
 rule SQANTI:
@@ -220,7 +223,7 @@ rule SQANTI:
          out = sqanti_prefix + "_classification.txt",
          gtf = sqanti_prefix  + "_corrected.gtf",
          fasta = sqanti_prefix + "_corrected.fasta",
-         gff = sqanti_prefix + "_corrected.gtf.cds.gff"
+         gff = sqanti_prefix + "_corrected.cds.gff3"
     params:
         sample = data_code,
         outDir = sqanti_folder,
@@ -240,17 +243,18 @@ rule SQANTI:
         "ml {R_VERSION};"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/sequence;"
         "export PYTHONPATH=$PYTHONPATH:{params.software}/cDNA_Cupcake/;"
-        "python {params.software}/SQANTI3/sqanti3_qc.py -t {params.nCores} "
+        "python {params.software}/SQANTI3_v5.5.1/sqanti3_qc.py -t {params.nCores} "
+        #" -n {params.nChunks} " # is chunking not working properly?
         " --dir {params.outDir} "
         " --out {params.sample} "
         #" -c {params.junctions} "
-        " --cage_peak {params.cage} --polyA_motif_list {params.polya} "
+        " --CAGE_peak {params.cage} --polyA_motif_list {params.polya} "
         #"--skipORF " # ORF finding is slow, can skip if testing
         #"-c {params.intropolis}"
         #" --fl_count {input.abundance}"
-        " --gtf {input.gtf} "
+        " --isoforms {input.gtf} "
         #" --isoAnnotLite --gff3 {params.isoAnnotGFF}"
-        " {params.gtf} {ref_genome} "
+        " --refGTF {params.gtf} --refFasta {ref_genome} "
 
 ## filter SQANTI
 # because stringtie outputs FPKMs rather than counts and TPMs I had to make a separate filtering script
@@ -258,7 +262,7 @@ rule filter_sqanti:
     input:
         #counts = miss_prefix + "_miss_counts.csv",
         tpm = miss_prefix + "_filter_fpkm.csv",
-        gff = sqanti_prefix + "_corrected.gtf.cds.gff",
+        gff = sqanti_prefix + "_corrected.cds.gff3",
         sqanti = sqanti_prefix + "_classification.txt",
         fasta = sqanti_prefix + "_corrected.fasta"
     output:

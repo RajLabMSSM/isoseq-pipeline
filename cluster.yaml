@@ -124,3 +124,11 @@ fastqc:
     cores: 8
     mem: 3000
     time: 360
+merge_total_bams:
+    cores: 8
+    mem: 6000
+    time: 360
+phase_bam_merged:
+    cores: 8
+    mem: 6000
+    time: 720

@@ -1,7 +1,7 @@
 ## PHASING LONG READ RNA-SEQ
 ## Jack Humphrey
 
-## Use longcallD to phase BAMs 
+## Use longcallR to phase BAMs 
 
 ## output list of phased SNPs and indels (VCF)
 ## output phased BAM file
@@ -44,16 +44,18 @@ rule all:
 
 rule merge_total_bams:
     input:
-        expand(out_folder + "{sample}/phasing/{sample}.{haplotype}.bam", sample = samples, haplotype = haplotypes )
+        expand(out_folder + "{sample}/alignment/{sample}.aligned.bam", sample = samples )
     output:
         expand(out_folder + "merged/{condition}.merged.bam", condition= conditions),
         expand(out_folder + "merged/{condition}.merged.bam.bai", condition= conditions )
+    params:
+        threads = 8
     run:
         for i in conditions:
             samples_loc = meta_df[meta_df['condition'] == i]['sample']
             files_loc = [out_folder + i + "/alignment/" + i + ".aligned.bam" for i in samples_loc]
             out_file = out_folder + "merged/" + i + ".merged.bam"
-            shell("ml samtools; samtools merge -o " + out_file + " " + " ".join(files_loc))
+            shell("ml samtools; samtools merge --threads {params.threads} -o " + out_file + " " + " ".join(files_loc))
             shell("ml samtools; samtools index {out_file}")
 
 rule phase_bam_merged:

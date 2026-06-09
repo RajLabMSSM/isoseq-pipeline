@@ -124,3 +124,23 @@ fastqc:
     cores: 8
     mem: 3000
     time: 360
+longcallR:
+    cores: 32
+    mem: 3000
+    time: 720
+    himem: "-R himem"
+allele_specific_splicing:
+    cores: 32
+    mem: 3000
+    time: 720
+    himem: "-R himem"
+allele_specific_expression:
+    cores: 32
+    mem: 3000
+    time: 720
+    himem: "-R himem"
+allele_specific_editing:
+    cores: 16
+    mem: 8000
+    time: 720
+    himem: "-R himem"

@@ -4,19 +4,25 @@
 import pandas as pd
 import os
 
-shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate isoquant; ml samtools; ml bedtools;")
+lcr_threads = 16
 
-longcallr="/sc/arion/projects/ad-omics/data/software/longcallR/target/release/longcallR"
-asj_to_bed="/sc/arion/projects/ad-omics/data/software/longcallR/allele_specific/asj_to_bed.py"
+shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); source $CONDA_BASE/etc/profile.d/conda.sh; module purge; conda activate isoseq-pipeline;")
+
+longcallr = "/sc/arion/projects/ad-omics/data/software/longcallR/target/release/longcallR"
+asj_to_bed = "/sc/arion/projects/ad-omics/data/software/longcallR/allele_specific/asj_to_bed.py"
 #genome=/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.fa
 #gtf=/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.primary_assembly.annotation.gtf
-rediportal="/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/lcr_test/TABLE1_hg38_v3.txt.gz"
-
-ref_fasta = config["ref_genome"] + ".fa"
+rediportal = "/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/lcr_test/TABLE1_hg38_v3.txt.gz"
+region_string = ""
+ref_genome = config["ref_genome"] + ".fa"
 ref_gtf = config["ref_gtf"]
 metadata = config["metadata"]
 data_code = config["data_code"]
-out_folder = config["out_folder"]
+outFolder = config["out_folder"]
+prep = config["prep"]
+
+gwas = "/sc/arion/projects/ad-omics/data/references/GWAS/Bellenguez_AD/Bellenguez_2021.processed.tsv.gz"
+
 # path to YAML sample metadata
 sample_config = config["sample_config"]
 
@@ -24,12 +30,12 @@ sample_config = config["sample_config"]
 meta_df = pd.read_excel(metadata)
 samples = meta_df['sample']
 
-metadata_dict = meta_df.set_index("sample").T.to_dict()
+# for testing
+#samples = "16-078_2_MFG"
+#region_string = "-r chr16:74821372-89210978"
+#outFolder = "test_lcr_editing"
 
-isoquant_prefix = out_folder + "isoquant/" + data_code + "/" + data_code + "/" + data_code
-miss_prefix = out_folder + "isoquant/filter1_missingness/" + data_code
-sqanti_prefix = out_folder + "isoquant/SQANTI/" + data_code + "_isoquant"
-filter_prefix = out_folder + "isoquant/filter2_sqanti/" + data_code
+metadata_dict = meta_df.set_index("sample").T.to_dict()
 
 junctionFolder = config["junctionFolder"]
 
@@ -50,104 +56,149 @@ if not all(file_check):
     print(missing_files)
     exit(1)
 
+if prep == "pacbio":
+    input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
+    longcallr_string = "hifi-masseq"
+
+if prep == "nanopore_direct":
+    input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
+    minimap_string = "-ax splice -uf -k14"
+    longcallr_string = ""
+
+if prep == "nanopore_cdna":
+    input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
+    minimap_string = "-ax splice"
+    longcallr_string = ""
+
+
+
 rule all:
     input:
+        expand(outFolder + "/{sample}/phased/{sample}.{test}.tsv", sample = samples, test = ["ase","asj","asediting"] ),
+        outFolder + "/GWAS/Bellenguez.ase_gwas_joint.tsv",
+        outFolder + "/GWAS/Bellenguez.asj_gwas_joint.tsv",
+        outFolder + "/GWAS/Bellenguez.asediting_gwas_joint.tsv",
+        outFolder + "longcallR/" + data_code + ".phasing_rates.tsv"
 
 rule longcallR:
-    output: prefix + prefix + ".phased.bam"
+    input:
+        bam = input_bam
+    output: "{outFolder}/{sample}/phased/{sample}.phased.bam"
+    params:
+        prefix = "{outFolder}/{sample}/phased/{sample}"    
     run:
+        shell("{longcallr} -b {input.bam} -f {ref_genome} -p {longcallr_string} -t {lcr_threads} -o {params.prefix} {region_string}")
+        shell("ml samtools; samtools index {output}")
 
-        shell("longcallr -b $bam -f $genome -p hifi-masseq -t 8 -o ${prefix}/${prefix}")
-        shell("ml samtools; samtools index ${prefix}/${prefix}.phased.bam")
-
+# for each phased bam output table on how many reads were able to be phased
+rule get_phasing_rate:
+    input:
+        expand(outFolder + "/{sample}/phased/{sample}.phased.bam", sample = samples)
+    output:
+        outFolder + "longcallR/" + data_code + ".phasing_rates.tsv"
+    params:
+        script = "scripts/get_phasing_rate.py"
+    run:
+        shell("ml samtools; python {params.script} --results-dir {outFolder} --out {output} -t {lcr_threads}")
 rule split_bam:
     input:
-        prefix + prefix + ".phased.bam"
+        bam =  "{outFolder}/{sample}/phased/{sample}.phased.bam"
     output:
-        h1 = prefix + prefix + ".hap1.bam"
-        h2 = prefix + prefix + ".hap2.bam"
+        h1 = "{outFolder}/{sample}/phased/{sample}.phased.hap1.bam",
+        h2 = "{outFolder}/{sample}/phased/{sample}.phased.hap2.bam"
     run:
         shell("ml samtools;\
-            samtools view -h -b -d HP:1 ${prefix}/${prefix}.phased.bam > ${prefix}/${prefix}.hap1.bam\
-            samtools index ${prefix}/${prefix}.hap1.bam\
-            samtools view -h -b -d HP:2 ${prefix}/${prefix}.phased.bam > ${prefix}/${prefix}.hap2.bam\
-            samtools index ${prefix}/${prefix}.hap2.bam")
-
+            samtools view -h -b -d HP:1 {input.bam} > {output.h1}\
+            samtools index {output.h1}\
+            samtools view -h -b -d HP:2 {input.bam} > {output.h2}\
+            samtools index {output.h2}")
+"{sample}/phased/{sample}.ase.tsv"
 rule allele_specific_splicing:
-$longcallr asj -a $gtf -b ${prefix}/${prefix}.phased.bam -f $genome -o ${prefix}/${prefix} -t 8
-$asj_to_bed ${prefix}/${prefix}.asj.tsv 0.05 > ${prefix}/${prefix}.asj.005.bed
-
+    input:
+        bam = "{outFolder}/{sample}/phased/{sample}.phased.bam"
+    output:
+        bed = "{outFolder}/{sample}/phased/{sample}.asj.0.05.bed",
+        tsv = "{outFolder}/{sample}/phased/{sample}.asj.tsv"
+    params:
+        prefix = "{outFolder}/{sample}/phased/{sample}"
+    run:
+        shell("{longcallr} asj -a {ref_gtf} -b {input.bam} -f {ref_genome} -o {params.prefix} -t {lcr_threads}")
+        shell("{asj_to_bed} {output.tsv} 0.05 > {output.bed}")
 
 rule allele_specific_expression:
-$longcallr ase -a $gtf -b ${prefix}/${prefix}.phased.bam -o ${prefix}/${prefix} -t 8
+    input:
+        bam = "{outFolder}/{sample}/phased/{sample}.phased.bam"
+    output:
+        ase = "{outFolder}/{sample}/phased/{sample}.ase.tsv"
+    params:
+        prefix = "{outFolder}/{sample}/phased/{sample}"
+    run:
+        shell("{longcallr} ase -a {ref_gtf} -b {input.bam} -o {params.prefix} -t {lcr_threads}")
 
 rule allele_specific_editing:
-    python longcallR-asediting_v6.py \
-    -b ${prefix}/${prefix}.phased.bam \
-    -r $rediportal \
-    -f $genome \
-    -o ${prefix}/${prefix} \
-    -a ${gtf} \
-    -t 8 \
-    --min_coverage 10 \
-    --min_editing_rate 0.01
+    input:
+        bam = "{outFolder}/{sample}/phased/{sample}.phased.bam"
+    output:
+        ased = "{outFolder}/{sample}/phased/{sample}.asediting.tsv"
+    params:
+        script = "scripts/longcallR-asediting_v13.py",
+        prefix = "{outFolder}/{sample}/phased/{sample}"
+    run:
+        shell("python {params.script} \
+        -b {input.bam} \
+        -r {rediportal} \
+        -o {params.prefix} \
+        -a {ref_gtf} \
+        -t {lcr_threads} \
+        --min_coverage 10 \
+        --min_editing_rate 0.01")
 
-rule assemble_results:
+#rule assemble_{outFolder}:
 # in R
-x <- list.files(pattern = "TSPAN14.*asj.tsv", recursive = TRUE); names(x) <- dirname(x)
-d <- map_df(x, read_tsv, .id = "sample", col_types = "cccnnnnnnnllc") %>% arrange(P_value)
+#x <- list.files(pattern = "TSPAN14.*asj.tsv", recursive = TRUE); names(x) <- dirname(x)
+#d <- map_df(x, read_tsv, .id = "sample", col_types = "cccnnnnnnnllc") %>% arrange(P_value)
 
-x <- list.files(pattern = "TSPAN14.*asediting.tsv", recursive = TRUE); names(x) <- dirname(x)
-d2 <- map_df(x, read_tsv, .id = "sample", col_types = "cnccnnnnnnnnnnnl") %>% arrange(P_value)
+#x <- list.files(pattern = "TSPAN14.*asediting.tsv", recursive = TRUE); names(x) <- dirname(x)
+#d2 <- map_df(x, read_tsv, .id = "sample", col_types = "cnccnnnnnnnnnnnl") %>% arrange(P_value)
 
-longcallr=/sc/arion/projects/ad-omics/data/software/longcallR/target/release/longcallR
-asj_to_bed=/sc/arion/projects/ad-omics/data/software/longcallR/allele_specific/asj_to_bed.py
-genome=/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.fa
-gtf=/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.primary_assembly.annotation.gtf
-#bam=/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/results/MG-18_1_MFG/alignment/MG-18_1_MFG.aligned.bam
-#region=chr19:51225012-51226118
-region=chr19:51187019-51283924
-region=chr19:48793064-48813029
-region=chr6:41147573-41164994
-region=chr16:81714393-81989729
-region=chr10:80438784-80556752
-rediportal=/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/lcr_test/TABLE1_hg38_v3.txt.gz
+# GWAS testing
+# for a GWAS, extract genome-wide significant SNPs
+# overlap with SNPs used to phase RNA
+# for each ASE, ASJ, ASED, find features (genes, junctions, edSites) within those haplotypes
+# get all AS features the right way around, with respect to the GWAS SNP
+# compare allelic FCs and do binomial test to get P-value of consistent direct of allelic bias
+# do inverse-variance weighting meta-analysis when present in 2 or more samples
+# scripts]$ python longcallR-gwas-joint.py -h
+#
+rule integrate_gwas:
+    input:
+        ase = expand(outFolder + "/{sample}/phased/{sample}.ase.tsv", sample = samples),
+        asj = expand(outFolder + "/{sample}/phased/{sample}.asj.tsv", sample = samples),
+        ased = expand(outFolder + "/{sample}/phased/{sample}.asediting.tsv", sample = samples)
+    output:
+        ase = outFolder + "/GWAS/Bellenguez.ase_gwas_joint.tsv",
+        asj = outFolder + "/GWAS/Bellenguez.asj_gwas_joint.tsv",
+        ased = outFolder + "/GWAS/Bellenguez.asediting_gwas_joint.tsv"
+    params:
+        script = "scripts/longcallR-gwas-joint_v3.py"
+    run:
+        shell("python {params.script} \
+            --results-dir {outFolder} \
+            --mode ase \
+            --gwas {gwas} \
+            --min-samples 1 \
+            --out {outFolder}/GWAS/Bellenguez")
+        shell("python {params.script} \
+            --results-dir {outFolder} \
+            --mode asj \
+            --min-samples 1 \
+            --gwas {gwas} \
+            --out {outFolder}/GWAS/Bellenguez")
+        shell("python {params.script} \
+            --results-dir {outFolder} \
+            --mode asediting \
+            --min-samples 1 \
+            --gwas {gwas} \
+            --out {outFolder}/GWAS/Bellenguez")
 
-bam_list=all_bams.txt
 
-for bam in $(cat $bam_list );do
-    prefix=$(basename $bam)
-    prefix=${prefix%.aligned.bam}.TSPAN14
-    echo ${prefix} 
-    mkdir -p ${prefix}
-    # phase reads
-    $longcallr -b $bam -f $genome -p hifi-masseq -t 8 -o ${prefix}/${prefix} -r $region
-    samtools index ${prefix}/${prefix}.phased.bam
-    
-    # split BAM into two haplotypes
-    # Haplotype 1
-    samtools view -h -b -d HP:1 ${prefix}/${prefix}.phased.bam > ${prefix}/${prefix}.hap1.bam
-    samtools index ${prefix}/${prefix}.hap1.bam
-
-    # Haplotype 2
-    samtools view -h -b -d HP:2 ${prefix}/${prefix}.phased.bam > ${prefix}/${prefix}.hap2.bam
-    samtools index ${prefix}/${prefix}.hap2.bam
-    
-    # allele-specific tests
-    $longcallr asj -a $gtf -b ${prefix}/${prefix}.phased.bam -f $genome -o ${prefix}/${prefix} -t 8
-    $longcallr ase -a $gtf -b ${prefix}/${prefix}.phased.bam -o ${prefix}/${prefix} -t 8
-    # make BED file for junctions
-    $asj_to_bed ${prefix}/${prefix}.asj.tsv 0.05 > ${prefix}/${prefix}.asj.005.bed
-
-    # experimental - allele-specific editing
-    python longcallR-asediting_v6.py \
-    -b ${prefix}/${prefix}.phased.bam \
-    -r $rediportal \
-    -f $genome \
-    -o ${prefix}/${prefix} \
-    -a ${gtf} \
-    -t 8 \
-    --min_coverage 10 \
-    --min_editing_rate 0.01
-
-done

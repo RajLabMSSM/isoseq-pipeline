@@ -10,10 +10,10 @@ shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); sour
 
 longcallr = "/sc/arion/projects/ad-omics/data/software/longcallR/target/release/longcallR"
 asj_to_bed = "/sc/arion/projects/ad-omics/data/software/longcallR/allele_specific/asj_to_bed.py"
-#genome=/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.fa
-#gtf=/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/gencode.v38.primary_assembly.annotation.gtf
+
 rediportal = "/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/lcr_test/TABLE1_hg38_v3.txt.gz"
 region_string = ""
+
 ref_genome = config["ref_genome"] + ".fa"
 ref_gtf = config["ref_gtf"]
 metadata = config["metadata"]
@@ -22,9 +22,6 @@ outFolder = config["out_folder"]
 prep = config["prep"]
 
 gwas = "/sc/arion/projects/ad-omics/data/references/GWAS/Bellenguez_AD/Bellenguez_2021.processed.tsv.gz"
-
-# path to YAML sample metadata
-sample_config = config["sample_config"]
 
 # read in metadata
 meta_df = pd.read_excel(metadata)
@@ -37,25 +34,6 @@ samples = meta_df['sample']
 
 metadata_dict = meta_df.set_index("sample").T.to_dict()
 
-junctionFolder = config["junctionFolder"]
-
-# check all files in sample config exist
-import yaml
-import io
-with open(sample_config, 'r') as stream:
-    data_loaded = yaml.safe_load(stream)
-
-short_read = data_loaded[1]['illumina bam']
-long_read = data_loaded[1]['long read files']
-all_files = short_read + long_read
-file_check = [os.path.isfile(f) for f in all_files]
-
-if not all(file_check):
-    print(" * missing files in sample config!")
-    missing_files = [all_files[i] for i in [j for j in range(len(file_check)) if not file_check[j]]]
-    print(missing_files)
-    exit(1)
-
 if prep == "pacbio":
     input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
     longcallr_string = "hifi-masseq"
@@ -63,12 +41,12 @@ if prep == "pacbio":
 if prep == "nanopore_direct":
     input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
     minimap_string = "-ax splice -uf -k14"
-    longcallr_string = ""
+    longcallr_string = "ont-drna"
 
 if prep == "nanopore_cdna":
     input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
     minimap_string = "-ax splice"
-    longcallr_string = ""
+    longcallr_string = "ont-cdna"
 
 
 

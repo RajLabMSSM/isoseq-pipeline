@@ -463,6 +463,23 @@ if __name__ == "__main__":
                         help="Output file prefix")
     parser.add_argument("--gwas-p", type=float, default=5e-8,
                         help="GWAS p-value threshold. Default: 5e-8")
+    parser.add_argument("--liftover", default=None, metavar="BUILD",
+                        help="Source genome build of the GWAS file, e.g. hg19 "
+                             "or GRCh37. Positions are lifted to hg38 on the fly "
+                             "using pyliftover. Example: --liftover hg19")
+    parser.add_argument("--liftover-chain", default=None, metavar="FILE",
+                        help="Path to a local chain file. Overrides auto-download. "
+                             "Use when internet access is restricted on the HPC.")
+    _col_group = parser.add_argument_group(
+        "GWAS column overrides",
+        "Explicitly specify column names where auto-detection fails. "
+        "Example: --col-chrom chromosome --col-effect BETA"
+    )
+    for _col in ("chrom", "pos", "allele1", "allele2", "effect", "pvalue", "rsid"):
+        _col_group.add_argument(
+            f"--col-{_col}", default=None, metavar="NAME",
+            help=f"Column name for '{_col}' in the GWAS file"
+        )
     parser.add_argument("--min-samples", type=int, default=1,
                         help="Minimum samples a gene x SNP pair must appear "
                              "in to be included in the joint output. Default: 1 "
@@ -489,7 +506,18 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Load GWAS hits once (shared across all samples)
-    gwas_hits = ann.load_gwas(args.gwas, args.gwas_p)
+    # Build column overrides from --col-* args (same interface as annotate script)
+    col_overrides = {}
+    for col in ("chrom", "pos", "allele1", "allele2", "effect", "pvalue", "rsid"):
+        val = getattr(args, f"col_{col}", None)
+        if val is not None:
+            col_overrides[col] = val
+    col_overrides = col_overrides or None
+
+    gwas_hits = ann.load_gwas(args.gwas, args.gwas_p,
+                          col_overrides=col_overrides,
+                          liftover_build=getattr(args, "liftover", None),
+                          liftover_chain=getattr(args, "liftover_chain", None))
     if not gwas_hits:
         print(f"Error: no GWAS SNPs at P < {args.gwas_p:.2e}.", file=sys.stderr)
         sys.exit(1)

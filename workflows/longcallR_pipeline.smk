@@ -20,8 +20,9 @@ metadata = config["metadata"]
 data_code = config["data_code"]
 outFolder = config["out_folder"]
 prep = config["prep"]
-
-gwas = "/sc/arion/projects/ad-omics/data/references/GWAS/Bellenguez_AD/Bellenguez_2021.processed.tsv.gz"
+phased_vcf = config["phased_vcf"] # make optional later
+phased_vcf_string = "--input-vcf " + phased_vcf + " --direct-haplotag"
+#gwas = "/sc/arion/projects/ad-omics/data/references/GWAS/Bellenguez_AD/Bellenguez_2021.processed.tsv.gz"
 
 # read in metadata
 meta_df = pd.read_excel(metadata)
@@ -48,15 +49,25 @@ if prep == "nanopore_cdna":
     minimap_string = "-ax splice"
     longcallr_string = "ont-cdna"
 
+# sanity check - can the GWAS and QTL data be found in the database?
+gwas_data = config["gwas"]
+
+gwas_df = pd.read_excel("/sc/arion/projects/ad-omics/data/references/GWAS/GWAS-QTL_data_dictionary.xlsx", sheet_name = "GWAS")
+
+gwas_check = all(i in gwas_df["dataset"].tolist() for i in gwas_data )
+
+if not gwas_check:
+    print(" * GWAS cannot be found in database")
+    sys.exit()
 
 
 rule all:
     input:
         expand(outFolder + "/{sample}/phased/{sample}.{test}.tsv", sample = samples, test = ["ase","asj","asediting"] ),
-        outFolder + "/GWAS/Bellenguez.ase_gwas_joint.tsv",
-        outFolder + "/GWAS/Bellenguez.asj_gwas_joint.tsv",
-        outFolder + "/GWAS/Bellenguez.asediting_gwas_joint.tsv",
-        outFolder + "longcallR/" + data_code + ".phasing_rates.tsv"
+        expand(outFolder + "/GWAS/{GWAS}.{out_type}", GWAS = gwas_data, out_type = ["ase_gwas_joint.tsv", "asj_gwas_joint.tsv", "asediting_gwas_joint.tsv"] ),
+        expand(outFolder + "/{sample}/phased/{sample}.phasing_rate.tsv", sample = samples)
+        #outFolder + "longcallR/" + data_code + ".phasing_rates.tsv"
+        
 
 rule longcallR:
     input:
@@ -65,19 +76,20 @@ rule longcallR:
     params:
         prefix = "{outFolder}/{sample}/phased/{sample}"    
     run:
-        shell("{longcallr} -b {input.bam} -f {ref_genome} -p {longcallr_string} -t {lcr_threads} -o {params.prefix} {region_string}")
+        shell("{longcallr} -b {input.bam} -f {ref_genome} {phased_vcf_string} -p {longcallr_string} -t {lcr_threads} -o {params.prefix} {region_string}")
         shell("ml samtools; samtools index {output}")
 
 # for each phased bam output table on how many reads were able to be phased
 rule get_phasing_rate:
     input:
-        expand(outFolder + "/{sample}/phased/{sample}.phased.bam", sample = samples)
+        "/{sample}/phased/{sample}.phased.bam"
     output:
-        outFolder + "longcallR/" + data_code + ".phasing_rates.tsv"
+        "/{sample}/phased/{sample}.phasing_rate.tsv"
     params:
         script = "scripts/get_phasing_rate.py"
     run:
-        shell("ml samtools; python {params.script} --results-dir {outFolder} --out {output} -t {lcr_threads}")
+        shell("ml samtools; python {params.script} --results-dir {outFolder}/{wildcards.sample}/phased/ --out {output} -t {lcr_threads}")
+
 rule split_bam:
     input:
         bam =  "{outFolder}/{sample}/phased/{sample}.phased.bam"
@@ -91,6 +103,7 @@ rule split_bam:
             samtools view -h -b -d HP:2 {input.bam} > {output.h2}\
             samtools index {output.h2}")
 "{sample}/phased/{sample}.ase.tsv"
+
 rule allele_specific_splicing:
     input:
         bam = "{outFolder}/{sample}/phased/{sample}.phased.bam"
@@ -154,29 +167,36 @@ rule integrate_gwas:
         asj = expand(outFolder + "/{sample}/phased/{sample}.asj.tsv", sample = samples),
         ased = expand(outFolder + "/{sample}/phased/{sample}.asediting.tsv", sample = samples)
     output:
-        ase = outFolder + "/GWAS/Bellenguez.ase_gwas_joint.tsv",
-        asj = outFolder + "/GWAS/Bellenguez.asj_gwas_joint.tsv",
-        ased = outFolder + "/GWAS/Bellenguez.asediting_gwas_joint.tsv"
+        ase = outFolder + "/GWAS/{GWAS}.ase_gwas_joint.tsv",
+        asj = outFolder + "/GWAS/{GWAS}.asj_gwas_joint.tsv",
+        ased = outFolder + "/GWAS/{GWAS}.asediting_gwas_joint.tsv"
     params:
-        script = "scripts/longcallR-gwas-joint_v3.py"
+        script = "scripts/longcallR-gwas-joint.py"
     run:
+        gwas = gwas_df.loc[ gwas_df["dataset"] == wildcards.GWAS, "full_processed_path"].values[0]
+        gwas_build = gwas_df.loc[ gwas_df["dataset"] == wildcards.GWAS, "build"].values[0]
+        if gwas_build == "hg19":
+            liftover_string = "--liftover hg19"
+        else:
+            liftover_string = ""
+        gwas_out = outFolder + "GWAS/" + wildcards.GWAS
         shell("python {params.script} \
             --results-dir {outFolder} \
             --mode ase \
-            --gwas {gwas} \
+            --gwas {gwas} {liftover_string}\
             --min-samples 1 \
-            --out {outFolder}/GWAS/Bellenguez")
+            --out {gwas_out}" )
         shell("python {params.script} \
             --results-dir {outFolder} \
             --mode asj \
             --min-samples 1 \
-            --gwas {gwas} \
-            --out {outFolder}/GWAS/Bellenguez")
+            --gwas {gwas} {liftover_string}\
+            --out {gwas_out}" )
         shell("python {params.script} \
             --results-dir {outFolder} \
             --mode asediting \
             --min-samples 1 \
-            --gwas {gwas} \
-            --out {outFolder}/GWAS/Bellenguez")
+            --gwas {gwas} {liftover_string}\
+            --out {gwas_out}" )
 
 

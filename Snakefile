@@ -83,7 +83,7 @@ else:
 # ── sub-workflows ─────────────────────────────────────────────────────────────
 # Each .smk has NO shell.prefix / config parsing / rule all of its own; it inherits
 # everything above and contributes only its tool-specific constants + rules.
-include: "workflows/qc_pipeline.smk"
+include: "workflows/qc_pipeline_rawfastq.smk"
 include: "workflows/bambu_pipeline.smk"
 include: "workflows/isoquant_pipeline.smk"
 include: "workflows/stringtie_pipeline.smk"

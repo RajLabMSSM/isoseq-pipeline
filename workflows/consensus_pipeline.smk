@@ -3,6 +3,8 @@
 # intron chain; keep transcripts present in >= min_consensus_tools of them. First
 # of two precision filters (consensus here, SQANTI next). Query order = tracking
 # column order: q1 bambu, q2 isoquant, q3 stringtie3.
+# merge_consensus then unions the per-group consensus GTFs into ONE per-cohort GTF
+# (dedup by intron chain) — that single GTF is what goes to SQANTI.
 
 gffcompare = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"
 min_consensus_tools = config.get("min_consensus_tools", 2)
@@ -32,3 +34,19 @@ rule consensus_isoforms:
         "{params.python} {params.script} "
         "--tracking {output.tracking} --combined {output.combined} "
         "--min-tools {params.min_tools} -o {output.gtf}"
+
+
+# union the per-group consensus GTFs into one per-cohort reference (gffcompare
+# .combined collapses identical intron chains); this single GTF feeds SQANTI
+rule merge_consensus:
+    input:
+        gtfs = expand(out_folder + "consensus/{group}/" + data_code + "_{group}_consensus.gtf", group=groups),
+        ref  = ref_gtf
+    output:
+        gtf = out_folder + "consensus/" + data_code + "_merged_consensus.gtf"
+    params:
+        prefix = out_folder + "consensus/" + data_code + "_merged_gffcmp"
+    shell:
+        "conda activate isoseq-pipeline; "
+        "{gffcompare} -r {input.ref} -o {params.prefix} {input.gtfs}; "
+        "cp {params.prefix}.combined.gtf {output.gtf}"

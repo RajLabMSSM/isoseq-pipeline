@@ -95,7 +95,8 @@ include: "workflows/sqanti_pipeline.smk"
 
 
 # requesting the SQANTI-filtered GTF transitively builds the whole chain:
-# pooled BAM -> {bambu,isoquant,stringtie3} -> gffcompare >=2/3 consensus -> SQANTI3
+# pooled BAM -> {bambu,isoquant,stringtie3} -> per-group >=2/3 consensus ->
+# merge groups -> ONE per-cohort GTF -> SQANTI3
 rule all:
     input:
         expand(out_folder + "{sample}/alignment/{sample}.aligned.bam",     sample=samples),
@@ -103,7 +104,7 @@ rule all:
         out_folder + data_code + "_read_lengths_collated.tsv.gz",
         out_folder + data_code + "_nanostat_collated.tsv",
         out_folder + "multiqc/multiqc_report.html",
-        expand(out_folder + "sqanti/{group}/" + data_code + "_{group}_filter_sqanti.cds.gtf", group=groups),
+        out_folder + "sqanti/" + data_code + "_filter_sqanti.cds.gtf",
 
         # individual assembler outputs (consensus already builds these):
         # expand(out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf",                group=groups),

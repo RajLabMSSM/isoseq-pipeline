@@ -1,14 +1,8 @@
 # isoquant_pipeline.smk
-# IsoQuant 3.4.1 (Prjibelski et al. 2023) transcript discovery, run PER GROUP =
-# Join & Call (Jetzinger et al. 2025). All of a group's aligned BAMs go into one
-# IsoQuant run: model construction pools every read (it does not partition discovery
-# by read group), while `--read_group file_name` still gives per-sample counts.
-#
-# Platform is config-driven via `prep`: ONT -> --data_type nanopore (k14/splice);
-# PacBio -> --data_type pacbio_ccs + --fl_data (Jetzinger used --fl_data for PacBio
-# only). Included by Snakefile (no shell.prefix / config / rule all here).
+# IsoQuant 3.13.0 (Prjibelski et al. 2023) discovery, per group (Join & Call).
+# Platform via prep: ONT --data_type nanopore; PacBio pacbio_ccs + --fl_data.
 
-isoquant         = "/sc/arion/projects/ad-omics/data/software/IsoQuant/isoquant.py"
+isoquant         = "isoquant"        # on PATH from the isoquant313 env (bioconda)
 isoquant_threads = 16
 
 if prep.startswith("pacbio"):
@@ -16,17 +10,12 @@ if prep.startswith("pacbio"):
     isoquant_fl_flag   = "--fl_data"     # full-length, PacBio HiFi
 else:
     isoquant_data_type = "nanopore"
-    isoquant_fl_flag   = ""              # ONT: no --fl_data
+    isoquant_fl_flag   = ""
 
-
-rule isoquant_run:
-    """
-    Join & Call within a group. IsoQuant writes to
-    {out}/isoquant/{group}/{data_code}_{group}/{data_code}_{group}.* (the inner
-    folder is IsoQuant's --prefix/experiment name).
-    """
+# --read_group file_name gives per-sample counts; discovery still pools all reads
+rule run_isoquant:
     input:
-        bams = lambda wc: group_bams(wc.group),
+        bams = lambda wc: pooled_bam(wc.group),
         ref  = referenceFa,
         gtf  = ref_gtf
     output:
@@ -38,7 +27,7 @@ rule isoquant_run:
         prefix = data_code + "_{group}"
     threads: isoquant_threads
     shell:
-        "conda activate isoquant; ml samtools; ml bedtools; "
+        "conda activate isoquant313; ml samtools; ml bedtools; "
         "{isoquant} --data_type {isoquant_data_type} {isoquant_fl_flag} "
         "--bam {input.bams} "
         "--reference {input.ref} "

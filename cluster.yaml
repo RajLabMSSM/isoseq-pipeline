@@ -79,10 +79,28 @@ run_stringtie:
   mem: 6000
   time: 720
 
-merge_stringtie:
+pool_group_bams:
   cores: 8
   mem: 3000
   time: 720
+
+consensus_isoforms:
+  cores: 2
+  mem: 8000
+  time: 120
+  queue: express
+
+sqanti_qc:
+  cores: 12
+  mem: 16000
+  time: 720
+  queue: premium
+
+sqanti_filter:
+  cores: 1
+  mem: 16000
+  time: 120
+  queue: express
 
 talon_filter:
   cores: 1
@@ -102,6 +120,12 @@ cupcake_collapse:
   time: '144:00'
   queue: premium
   himem: "-R himem"
+
+bambu_create_annotation:
+  cores: 1
+  mem: 16000
+  time: 120
+  queue: express
 
 run_bambu:
   cores: 8

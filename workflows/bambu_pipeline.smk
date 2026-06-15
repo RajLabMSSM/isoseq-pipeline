@@ -1,17 +1,10 @@
 # bambu_pipeline.smk
-# Bambu transcript discovery, run PER GROUP = Join & Call (Jetzinger et al. 2025).
-# Bambu (Chen et al. 2023) discovers jointly across all BAMs handed to one bambu()
-# call, so passing a group's replicates pools their evidence -> better recall of
-# rare, low-expression novel isoforms. Sensitivity is tunable via NDR (higher -> 1.0
-# = more novel); see scripts/bambu_run.R.
-#
-# Included by Snakefile (no shell.prefix / config / rule all here). Inherits
-# out_folder, data_code, ref_gtf, referenceFa, groups, group_bams().
+# Bambu (Chen et al. 2023) discovery, per group (Join & Call). NDR knob: higher
+# -> more novel; see scripts/bambu_run.R.
 
-BAMBU_R_VERSION = "R/4.2.2"          # Bambu v3 lives on the R/4.2.2 module
-bambu_cores     = 8
+bambu_cores = 8          # bambu 3.12.1 + its own R, from the bambu_env conda env
 
-# Reference annotation prepared once, shared across all groups.
+# reference annotation, shared across groups
 rule bambu_create_annotation:
     input:
         gtf = ref_gtf
@@ -20,18 +13,15 @@ rule bambu_create_annotation:
     params:
         script = "scripts/bambu_annotation.R"
     shell:
-        "conda activate snakemake; ml {BAMBU_R_VERSION}; "
+        "conda activate bambu_env; "
         "Rscript {params.script} -i {input.gtf} -o {output.rdata}"
 
 
-rule bambu_run:
-    """
-    Join & Call within a group: all of the group's aligned BAMs go to ONE bambu()
-    call so discovery pools evidence across replicates. To raise sensitivity for
-    rare novel isoforms, add `--NDR <0-1>` (higher = more novel) — see bambu_run.R.
-    """
+# NDR pinned to 0.5 (permissive): discover generously, then the >=2/3 consensus +
+# SQANTI restore precision. Lower toward 0.1 for a high-confidence standalone catalog.
+rule run_bambu:
     input:
-        bams = lambda wc: group_bams(wc.group),
+        bams = lambda wc: pooled_bam(wc.group),
         anno = out_folder + "bambu/bambu_annotation.RData"
     output:
         gtf    = out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf",
@@ -42,7 +32,6 @@ rule bambu_run:
         script = "scripts/bambu_run.R"
     threads: bambu_cores
     shell:
-        "conda activate snakemake; ml {BAMBU_R_VERSION}; "
+        "conda activate bambu_env; "
         "Rscript {params.script} --cores {threads} --fasta {referenceFa} "
-        "--anno {input.anno} --prefix {params.prefix} {input.bams}"
-        # rare-isoform tuning (optional): append  --NDR 0.5  (or higher, up to 1.0)
+        "--anno {input.anno} --prefix {params.prefix} --NDR 0.5 {input.bams}"

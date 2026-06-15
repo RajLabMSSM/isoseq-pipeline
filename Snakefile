@@ -1,20 +1,11 @@
-
 # Snakefile
-# isoseq-pipeline — ONT / PacBio long-read RNA-seq isoform discovery
-# (quite literally not isoseq3; used for ONT nanopore long-read RNA-seq. alas!)
-#
-# Strategy: Join & Call, pooled PER GROUP (Jetzinger et al. 2025) so that
-# condition-specific rare novel isoforms (e.g. TDP) are not diluted by the other
-# group. QC -> {bambu, isoquant, stringtie3} all run from this single Snakefile in
-# one `snakemake` submission; Snakemake sequences them by file dependency.
+# isoseq-pipeline — ONT / PacBio long-read RNA-seq isoform discovery.
+# Join & Call pooled per group (Jetzinger et al. 2025): QC -> {bambu, isoquant,
+# stringtie3} -> gffcompare consensus -> SQANTI3, in one snakemake submission.
 # Brooke Friedman
 
-# ── single global shell prefix (conda setup only) ─────────────────────────────
-# Mirrors old/Snakefile: ONE prefix. It sets conda up and activates the default
-# QC env (isoseq-pipeline). Downstream rules switch env inline with
-# `conda activate ...`. shell.prefix is GLOBAL in Snakemake (only one can be
-# active), so the included workflow .smk files do NOT define their own — they
-# inherit this one and override per-rule where needed.
+# ONE global shell.prefix (conda setup + default isoseq-pipeline env); included
+# .smk inherit it and switch env per-rule. shell.prefix is global in Snakemake.
 shell.prefix(
     'export PS1=""; '
     'ml anaconda3; '
@@ -28,9 +19,12 @@ import pandas as pd
 import glob
 import os
 
-# ── config (parsed ONCE here; the included .smk inherit every name below) ──────
+# config (parsed once; included .smk inherit every name below)
 metadata        = config['metadata']
 prep            = config['prep']                  # nanopore_cdna | nanopore_direct | pacbio
+# pacbio entry point (prep == pacbio only): 'flnc' = metadata flnc_bam_path already
+# FLNC/HiFi (default); 'subreads' = run CCS to make FLNC from metadata subreads_xml
+pacbio_input    = config.get('pacbio_input', 'flnc')
 run_code        = config['run_code']
 out_folder      = config['out_folder'] + run_code + "/"
 data_code       = config['data_code']
@@ -45,7 +39,7 @@ reflat_file     = config['reflat_file']           # Picard refFlat
 referenceFa  = ref_genome + ".fa"
 referenceGTF = ref_gtf
 
-# ── metadata ──────────────────────────────────────────────────────────────────
+# metadata
 if metadata.endswith(".tsv"):
     metaDF = pd.read_csv(metadata, sep='\t')
 elif metadata.endswith(".xlsx"):
@@ -56,9 +50,7 @@ else:
 samples       = metaDF['sample'].astype(str).tolist()
 metadata_dict = metaDF.set_index("sample").T.to_dict()
 
-# ── groups = the Join & Call unit ─────────────────────────────────────────────
-# Membership: sample name starts with a group string in config['groups']
-# (e.g. GFP_1 -> GFP, TDP1 -> TDP, CTRL3 -> CTRL).
+# groups = Join & Call unit; membership by sample-name prefix (GFP_1 -> GFP)
 groups = config.get('groups', [])
 sample_groups = {g: [s for s in samples if s.startswith(g)] for g in groups}
 for g, ss in sample_groups.items():
@@ -69,59 +61,58 @@ print("Prep:", prep)
 print("Samples:", samples)
 print("Groups:", sample_groups)
 
-# helper: aligned BAMs belonging to a group (used by all three assemblers)
+# a group's aligned BAMs (pool inputs)
 def group_bams(group):
     return [out_folder + "%s/alignment/%s.aligned.bam" % (s, s) for s in sample_groups[group]]
 
-# ── minimap2 index ────────────────────────────────────────────────────────────
-# Use a prebuilt index if given in config, else build it (create_index in qc).
+# per-group pooled BAM: the single Join & Call input shared by all three assemblers
+def pooled_bam(group):
+    return out_folder + "pooled/" + data_code + "_%s.pooled.bam" % group
+
+# per-sample FLNC for the pacbio aligner: CCS output (subreads) or metadata (flnc)
+def pacbio_flnc(sample):
+    if pacbio_input == "subreads":
+        return out_folder + "%s/flnc/%s.flnc.bam" % (sample, sample)
+    return metadata_dict[sample]["flnc_bam_path"]
+
+# pacbio cDNA primers for lima/refine (CCS path)
+pacbio_primers  = config.get('pacbio_primers', "reference/NEB_primers_01_2019.fa")
+
+# minimap2 index: prebuilt from config, else built by create_index
 if config.get('ref_genome_index'):
     mmi = config['ref_genome_index']
 else:
     mmi = ref_genome + ".mmi"
 
-# ── sub-workflows ─────────────────────────────────────────────────────────────
-# Each .smk has NO shell.prefix / config parsing / rule all of its own; it inherits
-# everything above and contributes only its tool-specific constants + rules.
-include: "workflows/qc_pipeline_rawfastq.smk"
+# sub-workflows (no shell.prefix / config / rule all of their own)
+include: "workflows/ccs_pipeline.smk"          # PacBio subreads -> FLNC (gated; inert for ONT)
+include: "workflows/qc_pipeline.smk"
 include: "workflows/bambu_pipeline.smk"
 include: "workflows/isoquant_pipeline.smk"
 include: "workflows/stringtie_pipeline.smk"
+include: "workflows/consensus_pipeline.smk"
+include: "workflows/sqanti_pipeline.smk"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# RULE ALL  (single target rule for the whole pipeline)
-# Assembler-only scope for now: QC + bambu/isoquant/stringtie3 per-group outputs.
-# Downstream SQANTI/filter/combine are out of scope here (see git history / old/).
-# ══════════════════════════════════════════════════════════════════════════════
+# requesting the SQANTI-filtered GTF transitively builds the whole chain:
+# pooled BAM -> {bambu,isoquant,stringtie3} -> gffcompare >=2/3 consensus -> SQANTI3
 rule all:
     input:
-        # ── QC ───────────────────────────────────────────────────────────────
         expand(out_folder + "{sample}/alignment/{sample}.aligned.bam",     sample=samples),
         expand(out_folder + "{sample}/alignment/{sample}.aligned.bam.bai", sample=samples),
         out_folder + data_code + "_read_lengths_collated.tsv.gz",
+        out_folder + data_code + "_nanostat_collated.tsv",
         out_folder + "multiqc/multiqc_report.html",
+        expand(out_folder + "sqanti/{group}/" + data_code + "_{group}_filter_sqanti.cds.gtf", group=groups),
 
-        # ── Bambu  (per-group Join & Call) ───────────────────────────────────
-        expand(out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf", group=groups),
-        expand(out_folder + "bambu/{group}/" + data_code + "_{group}_counts_transcript.txt",    group=groups),
-
-        # ── IsoQuant  (per-group Join & Call) ────────────────────────────────
-        expand(out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.extended_annotation.gtf",                group=groups),
-        expand(out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.transcript_model_grouped_counts.tsv",    group=groups),
-
-        # ── StringTie3  (per-group Join & Call: pooled-BAM assembly) ──────────
-        expand(out_folder + "stringtie3/{group}/" + data_code + "_{group}.stringtie.gtf", group=groups),
+        # individual assembler outputs (consensus already builds these):
+        # expand(out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf",                group=groups),
+        # expand(out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.extended_annotation.gtf", group=groups),
+        # expand(out_folder + "stringtie3/{group}/" + data_code + "_{group}.stringtie.gtf",                     group=groups),
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# REFERENCE PREP  (run once per reference genome)
-# ══════════════════════════════════════════════════════════════════════════════
+# collapse reference GTF to one transcript per gene (RNA-SeQC input)
 rule collapseAnnotationGlobal:
-    """
-    Collapse reference GTF to one transcript per gene (required by RNA-SeQC).
-    Output path mirrors what qc_pipeline.smk expects as genes_gtf.
-    """
     input:  referenceGTF
     output: genes_gtf
     params:
@@ -129,3 +120,17 @@ rule collapseAnnotationGlobal:
         python = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
     shell:
         "{params.python} {params.script} {input} {output}"
+
+
+# pooled BAM (Join & Call unit): merge a group's aligned BAMs -> one sorted/indexed BAM
+rule pool_group_bams:
+    input:
+        bams = lambda wc: group_bams(wc.group)
+    output:
+        bam = out_folder + "pooled/" + data_code + "_{group}.pooled.bam",
+        bai = out_folder + "pooled/" + data_code + "_{group}.pooled.bam.bai"
+    threads: 4
+    shell:
+        "conda activate isoseq-pipeline; "
+        "samtools merge -f -@ {threads} {output.bam} {input.bams}; "
+        "samtools index {output.bam}"

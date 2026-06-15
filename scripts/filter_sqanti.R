@@ -23,7 +23,12 @@ counts_file <- opt$counts
 tpm_file <- paste0(input, "_miss_tpm.csv")
 gff_file <- opt$gff
 
-stopifnot(file.exists(counts_file) )
+# counts/TPM are OPTIONAL: in the long-read assembly pipeline quantification is done
+# downstream of SQANTI, so there are no counts yet. When --counts is empty/missing we
+# filter only the classification + GFF + FASTA and skip the counts/TPM subsetting. The
+# filtering DECISION (filter_pass below) never uses counts, so this changes nothing
+# about which isoforms are kept. When counts ARE supplied, behaviour is unchanged.
+have_counts <- nzchar(counts_file) && file.exists(counts_file) && file.exists(tpm_file)
 stopifnot(file.exists(gff_file) )
 stopifnot(file.exists(sqanti_file))
 
@@ -69,9 +74,11 @@ calculate_rc_score <- function(seqs){
 pre$rc_score <- calculate_rc_score(pre$seq_A_downstream_TTS)
 
 
-# read in counts, TPM and GTF
-counts <- read_csv(counts_file)
-tpm <- read_csv(tpm_file)
+# read in counts, TPM (optional) and GTF
+if (have_counts) {
+  counts <- read_csv(counts_file)
+  tpm <- read_csv(tpm_file)
+}
 gff <- import(gff_file, format = "GFF")
 
 # filter transcripts using SQANTI settings
@@ -109,8 +116,10 @@ reasons <- post %>%
 
 
 # filter output files
-counts <- counts[ counts$id %in% post$isoform,]
-tpm <- tpm[ tpm$id %in% post$isoform,] 
+if (have_counts) {
+  counts <- counts[ counts$id %in% post$isoform,]
+  tpm <- tpm[ tpm$id %in% post$isoform,]
+}
 gff <- gff[ gff$transcript_id %in% post$isoform ]
 
 # read in FASTA and filter
@@ -122,10 +131,12 @@ fasta <- fasta[ post$isoform ]
 
 message(" * writing to", sqanti_out)
 write_tsv(post, file = sqanti_out)
-message( " * writing to ", counts_out )
-write_csv(counts, file = counts_out)
-message(" * writing to ", tpm_out)
-write_csv(tpm, file = tpm_out)
+if (have_counts) {
+  message( " * writing to ", counts_out )
+  write_csv(counts, file = counts_out)
+  message(" * writing to ", tpm_out)
+  write_csv(tpm, file = tpm_out)
+}
 message(" * writing to ", gff_out)
 export(gff, con = gff_out, format = "GTF")
 message(" * writing to ", fasta_out )

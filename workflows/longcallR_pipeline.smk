@@ -74,7 +74,7 @@ rule longcallR:
         bam = input_bam
     output: "{outFolder}/{sample}/phased/{sample}.phased.bam"
     params:
-        prefix = "{outFolder}/{sample}/phased/{sample}"    
+        prefix = "{outFolder}/{sample}/phased/{sample}"
     run:
         shell("{longcallr} -b {input.bam} -f {ref_genome} {phased_vcf_string} -p {longcallr_string} -t {lcr_threads} -o {params.prefix} {region_string}")
         shell("ml samtools; samtools index {output}")
@@ -82,13 +82,13 @@ rule longcallR:
 # for each phased bam output table on how many reads were able to be phased
 rule get_phasing_rate:
     input:
-        "/{sample}/phased/{sample}.phased.bam"
+        "{outFolder}/{sample}/phased/{sample}.phased.bam"
     output:
-        "/{sample}/phased/{sample}.phasing_rate.tsv"
+        "{outFolder}/{sample}/phased/{sample}.phasing_rate.tsv"
     params:
         script = "scripts/get_phasing_rate.py"
     run:
-        shell("ml samtools; python {params.script} --results-dir {outFolder}/{wildcards.sample}/phased/ --out {output} -t {lcr_threads}")
+        shell("ml samtools; python {params.script} --results-dir {outFolder} --samples {wildcards.sample} --out {output} -t {lcr_threads}")
 
 rule split_bam:
     input:

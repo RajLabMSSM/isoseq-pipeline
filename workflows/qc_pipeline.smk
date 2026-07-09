@@ -1,20 +1,13 @@
 # qc_pipeline.smk
-# Long-read QC + alignment (minimap2 for ONT, pbmm2 for PacBio FLNC), selected by
-# `prep`. Included by Snakefile (owns shell.prefix, config, samples, out_folder,
-# groups, mmi).
-
 minimap2_bin = "/sc/arion/projects/ad-omics/data/software/minimap2-2.31/minimap2"
 genome = referenceFa
 rrna   = "/sc/arion/projects/H_PBG/REFERENCES/GRCh38/Gencode/release_30/gencode.v30.rRNA.interval.list"
-
-# canonical aligned BAM: both aligners write here, so downstream never branches on platform
 output_bam = out_folder + "{sample}/alignment/{sample}.aligned.bam"
-
 # minimap2 preset per prep (config can override)
 if prep == "nanopore_cdna":
-    minimap_preset = "splice:hq"; minimap_flags = "-uf"
+    minimap_preset = "splice:hq"; minimap_flags = "-ub"
 if prep == "nanopore_direct":
-    minimap_preset = "splice";    minimap_flags = "-uf -k14"   # direct RNA
+    minimap_preset = "splice";    minimap_flags = "-uf -k14"   
 if prep == "pacbio":
     minimap_preset = "splice:hq"; minimap_flags = "-uf"
 if config.get('minimap_preset'):
@@ -29,6 +22,36 @@ def raw_reads(wildcards):
     return metadata_dict[wildcards.sample]["long_read_fastq"]
 
 
+# combined annotation + short-read junc-bed (built once); else annotation only
+combined_junc_bed = out_folder + data_code + ".combined_junctions.bed"
+
+def junc_bed_for_alignment():
+    return combined_junc_bed if use_short_read_junctions else junctions_bed
+
+# fastq fed to minimap2: pychopper full-length reads (cdna), else raw long reads
+def align_fastq(wildcards):
+    if prep == "nanopore_cdna" and use_pychopper:
+        return out_folder + "{s}/pychopper/{s}.full_length.fastq".format(s=wildcards.sample)
+    return metadata_dict[wildcards.sample]["long_read_fastq"]
+
+
+# annotation BED12 + empirical STAR introns (BED6) -> one --junc-bed for minimap2
+if use_short_read_junctions:
+    rule build_junc_bed:
+        input:
+            anno = junctions_bed,
+            sj   = junction_folder
+        output:
+            combined_junc_bed
+        params:
+            script    = "scripts/build_junc_bed.py",
+            min_uniq  = short_read_junc_min_uniq,
+            canonical = "--canonical_only" if short_read_junc_canonical_only else ""
+        shell:
+            "python {params.script} --annotation {input.anno} --sj_folder {input.sj} "
+            "--min_uniq {params.min_uniq} {params.canonical} -o {output}"
+
+
 # reference
 if not config.get('ref_genome_index'):
     rule create_index:
@@ -38,27 +61,53 @@ if not config.get('ref_genome_index'):
             "{minimap2_bin} -x {minimap_preset} -d {output} {input}"
 
 
+# pychopper: identify/orient/trim full-length ONT cDNA reads, rescue fused reads.
+if prep == "nanopore_cdna" and use_pychopper:
+
+    rule pychopper:
+        input:
+            fastq = lambda wc: metadata_dict[wc.sample]["long_read_fastq"]
+        output:
+            fl = temp(out_folder + "{sample}/pychopper/{sample}.full_length.fastq")
+        params:
+            pdir = out_folder + "{sample}/pychopper",
+            pre  = out_folder + "{sample}/pychopper/{sample}",
+            kit  = pychopper_kit
+        threads: 8
+        shell:
+            "conda activate pychopper_env; "
+            "mkdir -p {params.pdir}; "
+            "zcat -f {input.fastq} > {params.pre}.input.fastq; "
+            "pychopper -k {params.kit} -m edlib -t {threads} "
+            "-r {params.pre}.report.pdf "
+            "-u {params.pre}.unclassified.fastq "
+            "-w {params.pre}.rescued.fastq "
+            "-S {params.pre}.stats.tsv "
+            "{params.pre}.input.fastq {params.pre}.primary.fastq; "
+            "cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}; "
+            "rm -f {params.pre}.input.fastq {params.pre}.primary.fastq "
+            "{params.pre}.unclassified.fastq {params.pre}.rescued.fastq"
+
+
 # alignment: one aligner active per run (gated by prep), both -> canonical BAM
 if prep in ("nanopore_cdna", "nanopore_direct"):
 
     rule nanopore_alignment:
         input:
             index = mmi,
-            junc  = junctions_bed
+            junc  = junc_bed_for_alignment(),
+            fastq = align_fastq
         output:
             sam = temp(out_folder + "{sample}/alignment/{sample}.aligned.sam")
         threads: 8
-        run:
-            fastq_file = metadata_dict[wildcards.sample]["long_read_fastq"]
-            shell(
-                "{minimap2_bin} "
-                "-ax {minimap_preset} {minimap_flags} "
-                "--secondary=no -G 500k "
-                "--junc-bed {input.junc} "
-                "-t {threads} "
-                "{input.index} {fastq_file} "
-                "> {output.sam}"
-            )
+        shell:
+            "{minimap2_bin} "
+            "-ax {minimap_preset} {minimap_flags} "
+            "--secondary=no -G 500k "
+            "--junc-bed {input.junc} "
+            "-t {threads} "
+            "{input.index} {input.fastq} "
+            "> {output.sam}"
 
     rule sam_to_bam:
         input:

@@ -1,0 +1,3 @@
+sample	long_read_fastq
+SAMPLE1	/path/to/SAMPLE1.fastq.gz
+SAMPLE2	/path/to/SAMPLE2.fastq.gz

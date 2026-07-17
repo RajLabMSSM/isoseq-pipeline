@@ -1,0 +1,8 @@
+prep: "nanopore_cdna"
+metadata: "config-files/nanopore_cdna_metadata.tsv"
+data_code: "example_nanopore_cdna"
+out_folder: "results/"
+ref_genome: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome"
+ref_gtf: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode_hg38_v50/gencode.v50.primary_assembly.annotation.gtf.gz"
+use_pychopper: true
+pychopper_kit: "PCS111"

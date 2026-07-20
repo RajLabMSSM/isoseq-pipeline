@@ -144,7 +144,7 @@ if prep == "nanopore_cdna" and use_pychopper:
         run:
             input_fastq = metadata_dict[wildcards.sample]["long_read_fastq"]
             shell(
-                "mkdir -p {params.pdir}; "
+                "conda activate pychopper_env; mkdir -p {params.pdir}; "
                 "{pychopper_bin} -k {params.kit} -t {threads} "
                 "-r {params.pdir}/{wildcards.sample}.report.pdf "
                 "-u {params.pdir}/{wildcards.sample}.unclassified.fq "

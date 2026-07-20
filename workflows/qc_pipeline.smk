@@ -48,6 +48,8 @@ genome = ref_genome + ".fa"
 
 ref_gtf = config['ref_gtf']
 
+use_pychopper = config.get('use_pychopper', True)
+
 pbmm2_threads = "8"
 #chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
 
@@ -129,13 +131,38 @@ rule merge_flnc_bams:
         "samtools index {output}"
 
 ## NANOPORE SPECIFIC STEPS
+if prep == "nanopore_cdna" and use_pychopper:
+    pychopper_kit = config['pychopper_kit']
+    pychopper_bin = "/sc/arion/projects/als-omics/conda/envs/pychopper_env/bin/pychopper"
+    rule pychopper:
+        output:
+            out_folder + "{sample}/pychopper/{sample}.full_length.fq"
+        params:
+            kit = pychopper_kit,
+            pdir = out_folder + "{sample}/pychopper"
+        threads: 8
+        run:
+            input_fastq = metadata_dict[wildcards.sample]["long_read_fastq"]
+            shell(
+                "mkdir -p {params.pdir}; "
+                "{pychopper_bin} -k {params.kit} -t {threads} "
+                "-r {params.pdir}/{wildcards.sample}.report.pdf "
+                "-u {params.pdir}/{wildcards.sample}.unclassified.fq "
+                "-w {params.pdir}/{wildcards.sample}.rescued.fq "
+                "{input_fastq} {output}")
+
+def nanopore_fastq(wildcards):
+    if prep == "nanopore_cdna" and use_pychopper:
+        return out_folder + "{s}/pychopper/{s}.full_length.fq".format(s=wildcards.sample)
+    return metadata_dict[wildcards.sample]["long_read_fastq"]
+
 rule nanopore_alignment:
+     input:
+         fastq = nanopore_fastq
      output:
          out_folder + "{sample}/alignment" + "/{sample}.aligned.sam"
-     run:
-        fastq_file = metadata_dict[wildcards.sample]["long_read_fastq"]
-
-        shell( "minimap2 {minimap_string} {genome} {fastq_file} > {output} ")
+     shell:
+        "minimap2 {minimap_string} {genome} {input.fastq} > {output} "
 
 ## convert to bam and coordinate sort
 rule sam_to_bam:

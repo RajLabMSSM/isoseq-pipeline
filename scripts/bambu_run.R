@@ -45,13 +45,16 @@ load(anno)
 #suppressPackageStartupMessages(
 library(bambu)#)
 
+# FaFile, not a path string: a string genome makes bambu call available.genomes() (needs BiocManager/net)
+genome <- Rsamtools::FaFile(fasta)
+
 # run bambu
 # Join & Call: all bam_files are passed together so discovery is joint across the
 # group's replicates. NDR defaults to NULL (bambu auto-recommends); pass --NDR to tune.
 res <- bambu(
     reads = bam_files,
     annotations = anno,
-    genome = fasta,
+    genome = genome,
     #stranded = FALSE,
     NDR = ndr,
     ncore = cores

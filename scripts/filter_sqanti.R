@@ -92,10 +92,9 @@ gff <- import(gff_file, format = "GFF")
 post <- pre %>% 
   mutate( filter_pass = case_when(
     structural_category == "full splice match" ~ TRUE,
-    structural_category != "full splice match" & 
-      RTS_stage == FALSE & # no RT-switching junction
-      ( 
-        diff_to_gene_TTS == 0 | # has an annotated TTS - in GENCODE v30
+    structural_category != "full splice match" &
+      (
+        diff_to_gene_TTS == 0 | # has an annotated TTS in the reference (GENCODE v50)
         (N_A_downstream_TTS < 6 & perc_A_downstream_TTS < 60 & rc_score <= 15) # or if not, TTS is low A content
       ) ~ TRUE,
     TRUE ~ FALSE
@@ -105,14 +104,6 @@ post <- pre %>%
 post <- filter(post, filter_pass == TRUE)
 message( " * filtering transcripts based on SQANTI annotation" )
 message( " * kept ", nrow(post), " transcripts!" )
-
-reasons <- post %>%
-  filter(filter_pass == FALSE) %>%
-  transmute( isoform, type = structural_category, RTS = RTS_stage == TRUE,
-          coverage = min_sample_cov < 5 | min_cov < 50 | is.na(min_sample_cov) | is.na(min_cov),
-          N_A = N_A_downstream_TTS >= 6,
-          perc_A = perc_A_downstream_TTS >= 60,
-          rc = rc_score > 15)
 
 
 # filter output files

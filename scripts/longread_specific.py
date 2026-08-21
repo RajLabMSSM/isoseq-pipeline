@@ -27,8 +27,6 @@ Buckets per tool:
   single_exon        0 introns (no junction; not classifiable by this test)
   sr_supported       multiexon AND every intron is in the SR set
   lr_specific        multiexon AND >= 1 intron is NOT in the SR set   <-- the metric
-
-Brooke Friedman
 """
 import argparse
 import glob

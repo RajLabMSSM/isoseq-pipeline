@@ -23,8 +23,6 @@ Intron-chain note: gffcompare matches MULTI-exon transcripts by exact intron cha
 transcripts have no intron chain and are matched by overlap instead, a looser
 criterion; use --multi-exon-only to drop single-exon transfrags from the consensus
 (handle them separately with orthogonal evidence, e.g. CAGE / short-read support).
-
-Brooke Friedman
 """
 import argparse
 

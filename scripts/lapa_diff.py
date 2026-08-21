@@ -17,8 +17,6 @@ the LAPA sample-config CSV (sample,dataset,path); `dataset` == group.
 
 Output columns: polya_site, Chromosome, Start, End, Strand, gene_id,
   count_<A>, count_<B>, PAU_<A>, PAU_<B>, delta_PAU (B-A), pval, padj, n_sites_gene.
-
-Brooke Friedman
 """
 import argparse
 import csv

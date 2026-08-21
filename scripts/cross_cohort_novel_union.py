@@ -6,21 +6,24 @@ Combine the SQANTI-passed NOVEL isoforms from >=2 cohorts into ONE cross-cohort 
 using the SAME end-aware collapse as the within-cohort consensus (consensus_endaware:
 two transcripts merge only when intron chains agree within +-junction_wobble bp AND
 5' ends within +-tss_tol bp AND 3' ends within +-tes_tol bp; single-exon collapses on
-the two ends alone). Everything else is kept -- alternative-TSS/TES (APA) isoforms and
-near-but-not-identical structures stay distinct. Then GENCODE (verbatim) is appended so
+the two ends alone). With --ignore-tss-multiexon the 5' criterion is dropped for
+MULTI-exon transcripts, mirroring consensus_pipeline.smk -- keep this in step with the
+within-cohort run or the cross-cohort key is stricter than the per-cohort one.
+Everything else is kept -- alternative-TSS/TES (APA) isoforms and near-but-not-identical
+structures stay distinct. Then GENCODE (verbatim) is appended so
 the output is a full reference+novel GTF, mirroring build_reference_with_novel.
 
 Novel input = transcripts whose source column is the novel source tag (default ONT) in
-each cohort's *_reference_plus_novel.gtf(.gz). Provenance (which cohorts contributed) is
+each cohort's *.isoforms.gtf(.gz). Provenance (which cohorts contributed) is
 recorded on each surviving isoform as cohorts "a,b" plus src_ids.
 
 Usage:
   cross_cohort_novel_union.py --reference gencode.v48.gtf \\
-     --cohort tdpkd=.../tdpkd_nanopore_reference_plus_novel.gtf.gz \\
-     --cohort sun=.../sun_..._reference_plus_novel.gtf.gz \\
-     --cohort tanaka=.../tanaka_nanopore_reference_plus_novel.gtf.gz \\
-     --novel-source ONT --wobble 6 --tss-tol 50 --tes-tol 50 \\
-     --prefix XNOVEL -o cross_cohort_reference_plus_novel_v48.gtf
+     --cohort tdpkd=.../tdpkd_nanopore.isoforms.gtf.gz \\
+     --cohort sun=.../sun_....isoforms.gtf.gz \\
+     --cohort tanaka=.../tanaka_nanopore.isoforms.gtf.gz \\
+     --novel-source ONT --wobble 6 --tss-tol 100 --tes-tol 100 --ignore-tss-multiexon \\
+     --prefix XNOVEL -o cross_cohort.isoforms_v50_v7.gtf
 """
 import argparse
 import gzip
@@ -87,8 +90,11 @@ def main():
                     help="cohort novel GTF (reference_plus_novel); repeat per cohort")
     ap.add_argument("--novel-source", default="ONT", help="GTF source column tag of novel records")
     ap.add_argument("--wobble", type=int, default=6)
-    ap.add_argument("--tss-tol", type=int, default=50)
-    ap.add_argument("--tes-tol", type=int, default=50)
+    ap.add_argument("--tss-tol", type=int, default=100)
+    ap.add_argument("--tes-tol", type=int, default=100)
+    ap.add_argument("--ignore-tss-multiexon", action="store_true",
+                    help="drop the 5' criterion for MULTI-exon transcripts (mono-exons keep it); "
+                         "must match the within-cohort consensus setting")
     ap.add_argument("--prefix", default="XNOVEL")
     ap.add_argument("--provenance-out")
     ap.add_argument("--summary-out", help="TSV funnel (tracking_numbers_final_numbers): "
@@ -107,10 +113,13 @@ def main():
     print("* loaded novel isoforms: " + ", ".join("%s=%d" % (k, v) for k, v in per_cohort.items())
           + " (total %d)" % len(order))
 
-    clusters = cluster(order, tx, args.wobble, args.tss_tol, args.tes_tol)
+    clusters = cluster(order, tx, args.wobble, args.tss_tol, args.tes_tol,
+                       ignore_tss_multiexon=args.ignore_tss_multiexon)
+    tss_desc = ("5' ignored (multi-exon), +-%dbp (mono-exon)" % args.tss_tol
+                if args.ignore_tss_multiexon else "5' +-%dbp" % args.tss_tol)
     print("* end-aware collapse: %d novel -> %d cross-cohort isoforms "
-          "(introns +-%dbp, 5' +-%dbp, 3' +-%dbp)"
-          % (len(order), len(clusters), args.wobble, args.tss_tol, args.tes_tol))
+          "(introns +-%dbp, %s, 3' +-%dbp)"
+          % (len(order), len(clusters), args.wobble, tss_desc, args.tes_tol))
 
     reps = []
     for members in clusters:
@@ -172,8 +181,15 @@ def main():
                 s.write("by_combo:%s\t%d\n" % (combo, n))
             s.write("single_cohort_only\t%d\n" % (len(reps) - shared))
             s.write("shared_by_2plus_cohorts\t%d\n" % shared)
+            mono = sum(1 for r in reps if len(tx[r[0]]["introns"]) == 0)
+            multi = len(reps) - mono
+            s.write("cross_cohort_novel_multiexon\t%d\n" % multi)
+            s.write("cross_cohort_novel_monoexon\t%d\n" % mono)
+            s.write("pct_novel_monoexon\t%.1f\n" % (100.0 * mono / len(reps) if reps else 0))
             s.write("gencode_transcripts\t%d\n" % ref_tx)
             s.write("final_total_transcripts\t%d\n" % (ref_tx + len(reps)))
+            s.write("cross_cohort_novel_EXCL_monoexon\t%d\n" % multi)
+            s.write("final_total_EXCL_monoexon\t%d\n" % (ref_tx + multi))
         print("* summary -> %s" % args.summary_out)
 
 

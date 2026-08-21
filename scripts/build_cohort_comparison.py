@@ -14,8 +14,6 @@ Emits two deliverables next to the cross-cohort reference:
 
 Numbers are pulled live; only design facts not stored in any file are hard-coded (and
 each is annotated with its source). Stdlib only.
-
-Brooke Friedman
 """
 import os
 import statistics as st

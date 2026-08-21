@@ -67,15 +67,18 @@ def main():
     ap.add_argument("--merged", required=True, help="<dc>_merged_consensus.gtf (real TCONS)")
     ap.add_argument("--exclude-codes", default="=,c")
     ap.add_argument("--wobble", type=int, default=6)
-    ap.add_argument("--tss-tol", type=int, default=50)
-    ap.add_argument("--tes-tol", type=int, default=50)
+    ap.add_argument("--tss-tol", type=int, default=100)
+    ap.add_argument("--tes-tol", type=int, default=100)
+    ap.add_argument("--ignore-tss-multiexon", action="store_true",
+                    help="must MATCH the consensus run or membership will not line up")
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
     drop = set(c for c in args.exclude_codes.split(",") if c)
 
     uni = load(args.annotated, True)
     novel = [u for u, d in uni.items() if d["cc"] not in drop]
-    clusters = cluster(novel, uni, args.wobble, args.tss_tol, args.tes_tol)
+    clusters = cluster(novel, uni, args.wobble, args.tss_tol, args.tes_tol,
+                       args.ignore_tss_multiexon)
 
     # cluster representatives (bucketed) -> tool set
     reps = defaultdict(list)   # (chrom,strand,nintr) -> [(rep_dict, tools)]
@@ -92,7 +95,8 @@ def main():
         for tid, d in cons.items():
             best, bestd = None, None
             for rep, tools in reps.get((d["chrom"], d["strand"], len(d["introns"])), []):
-                if (abs(d["tss"] - rep["tss"]) <= args.tss_tol
+                skip_tss = args.ignore_tss_multiexon and len(d["introns"]) > 0
+                if ((skip_tss or abs(d["tss"] - rep["tss"]) <= args.tss_tol)
                         and abs(d["tes"] - rep["tes"]) <= args.tes_tol
                         and introns_match(d["introns"], rep["introns"], args.wobble)):
                     dist = abs(d["tss"] - rep["tss"]) + abs(d["tes"] - rep["tes"])

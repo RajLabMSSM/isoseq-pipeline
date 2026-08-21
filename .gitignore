@@ -1,3 +1,13 @@
 .snakemake/
 logs/
 old/
+
+# never push agent notes
+.claude/
+__pycache__/
+
+# never push data or indexes
+misc/
+*.mmi
+results/
+AUDIT_field_practice.md

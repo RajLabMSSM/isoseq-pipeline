@@ -19,8 +19,6 @@ class_code, so "novel candidate" = class_code not in --exclude-codes.
 
 Coverage = samtools bedcov over the per-sample long-read CRAMs (primary alignments only,
 -G 0x900 drops secondary+supplementary), summed across samples. CRAMs need --reference.
-
-Brooke Friedman
 """
 import argparse
 import glob

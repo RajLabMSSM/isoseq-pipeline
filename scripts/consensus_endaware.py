@@ -1,34 +1,30 @@
 #!/usr/bin/env python
 """
-consensus_endaware.py
+End-aware cross-tool consensus collapse.
 
-End-aware cross-tool consensus collapse. Unlike gffcompare (which merges transcripts
-by intron chain and DISCARDS 5'/3' ends), this keeps alternative-TSS/TES (APA)
-isoforms distinct: two transcripts collapse into one only when their intron chains
-agree within +/- junction_wobble bp AND their 5' ends agree within tss_tol bp AND
-their 3' ends agree within tes_tol bp. Single-exon transcripts collapse on the two
-ends alone. This is the discovery catalog for publication, so it errs toward
-retention; SQANTI (downstream) is the precision filter, and LAPA (downstream) is the
-internal-priming-aware APA quantifier.
+gffcompare merges transcripts on intron chain alone and drops the 5' and 3' ends, which
+loses alternative TSS and polyA isoforms. Here two transcripts collapse only when their
+intron chains agree within junction_wobble, their 5' ends agree within tss_tol and their
+3' ends agree within tes_tol. Single-exon transcripts collapse on the two ends alone.
+
+This is the discovery catalogue, so it errs towards retention. SQANTI downstream is the
+precision filter.
 
 Inputs:
-  --union      prefixed union GTF from build_union.py (carries src_tool/src_group)
-  --gffcmp-prefix   gffcompare -o prefix; we read <prefix>.*.tmap for per-transcript
-                    class_code + matched reference id (cmp_ref) vs the reference
+  --union           prefixed union gtf from build_union.py, carrying src_tool and src_group
+  --gffcmp-prefix   gffcompare -o prefix. <prefix>.*.tmap gives the per-transcript
+                    class_code and matched reference id
+
 Outputs:
-  -o           merged consensus GTF: one representative per collapse cluster, novel
-               only (class_code not in --exclude-codes), carrying gene_id (locus),
-               class_code, cmp_ref -- the exact attributes build_reference_with_novel
-               consumes.
-  --overlap-out / --membership-out   Venn + per-isoform tool provenance (same formats
-               as consensus_from_gffcompare.py so downstream R is unchanged).
+  -o                merged consensus gtf, one representative per cluster, novel only,
+                    carrying the gene_id, class_code and cmp_ref that
+                    build_reference_with_novel consumes
+  --overlap-out     tool overlap counts
+  --membership-out  per-isoform tool provenance
 
-Clustering avoids transitive over-chaining on the loose end tolerances by ANCHORING:
-each cluster's first member is its anchor and every other member must fall within
-tolerance of THAT anchor (not merely of its neighbour), so a run of APA sites spaced
-just under the tolerance cannot chain into one blob.
-
-Brooke Friedman
+Clusters are anchored rather than chained: every member must fall within tolerance of the
+cluster's first member, not merely of its neighbour, so a run of polyA sites spaced just
+under the tolerance cannot chain into a single cluster.
 """
 import argparse
 import glob
@@ -109,14 +105,21 @@ def introns_match(a, b, wobble):
     return all(abs(x - y) <= wobble for x, y in zip(a, b))
 
 
-def cluster(uids, tx, wobble, tss_tol, tes_tol):
-    """Anchor-bounded greedy clustering within (chrom, strand, n_introns) buckets."""
+def cluster(uids, tx, wobble, tss_tol, tes_tol, ignore_tss_multiexon=False):
+    """Anchor-bounded greedy clustering within (chrom, strand, n_introns) buckets.
+
+    ignore_tss_multiexon: drop the 5' criterion for MULTI-exon transcripts, where the
+    intron chain already discriminates. It stays on for mono-exons, which have no chain
+    to anchor them -- without it any two mono-exons sharing a 3' end merge regardless of
+    length (a 200bp and a 50kb model would collapse together).
+    """
     buckets = defaultdict(list)
     for uid in uids:
         d = tx[uid]
         buckets[(d["chrom"], d["strand"], len(d["introns"]))].append(uid)
     clusters = []
     for key, members in buckets.items():
+        skip_tss = ignore_tss_multiexon and key[2] > 0
         members.sort(key=lambda u: (tx[u]["introns"], tx[u]["tss"], tx[u]["tes"], u))
         anchors = []   # list of (anchor_uid, [members])
         for uid in members:
@@ -124,7 +127,7 @@ def cluster(uids, tx, wobble, tss_tol, tes_tol):
             placed = False
             for a_uid, grp in anchors:
                 a = tx[a_uid]
-                if (abs(d["tss"] - a["tss"]) <= tss_tol
+                if ((skip_tss or abs(d["tss"] - a["tss"]) <= tss_tol)
                         and abs(d["tes"] - a["tes"]) <= tes_tol
                         and introns_match(d["introns"], a["introns"], wobble)):
                     grp.append(uid)
@@ -224,8 +227,10 @@ def main():
     ap.add_argument("--gffcmp-prefix", required=True)
     ap.add_argument("--min-tools", type=int, default=1)
     ap.add_argument("--junction-wobble", type=int, default=6)
-    ap.add_argument("--tss-tol", type=int, default=50)
-    ap.add_argument("--tes-tol", type=int, default=50)
+    ap.add_argument("--tss-tol", type=int, default=100)
+    ap.add_argument("--tes-tol", type=int, default=100)
+    ap.add_argument("--ignore-tss-multiexon", action="store_true",
+                    help="drop the 5' criterion for multi-exon transcripts (mono-exons keep it)")
     ap.add_argument("--exclude-codes", default="=,c",
                     help="class codes treated as already-in-reference -> not novel")
     ap.add_argument("--overlap-out")
@@ -253,7 +258,8 @@ def main():
             for t in TOOLS:
                 sf.write("%s\t%d\t%d\n" % (t, raw_all.get(t, 0), novel_cand.get(t, 0)))
 
-    clusters = cluster(novel, tx, args.junction_wobble, args.tss_tol, args.tes_tol)
+    clusters = cluster(novel, tx, args.junction_wobble, args.tss_tol, args.tes_tol,
+                       args.ignore_tss_multiexon)
 
     kept = []   # (rep_uid, members, tools)
     for members in clusters:

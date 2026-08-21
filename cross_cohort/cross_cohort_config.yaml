@@ -1,0 +1,38 @@
+# Cross-cohort combine: UNION of the SQANTI-passed NOVEL isoforms from every cohort,
+# collapsed with the SAME end-aware rule as the within-cohort consensus (identical intron
+# chains within +-wobble AND 5'/3' ends within tolerance merge; everything else kept),
+# then GENCODE appended verbatim. Run after each cohort's per-cohort pipeline has produced
+# its <dc>.isoforms.gtf.gz + _novel_provenance.tsv.
+
+reference: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode_hg38_v50/gencode.v50.primary_assembly.annotation.gtf.gz"
+
+# genome FASTA for gffread -> the transcriptome .fa.gz emitted alongside the GTF
+# (GRCh38 primary, version-independent). Used by rule cross_cohort_fasta.
+genome_fasta: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.fa"
+
+output_dir: "/sc/arion/projects/als-omics/brooke-phd-thesis/novel_isoform_references/"
+output_name: "isoforms_v8"
+
+novel_source: "ONT"        # GTF source column tag of novel records in each cohort ref
+wobble: 6                  # +/- bp at splice junctions (same as within-cohort consensus)
+tss_tol: 100              # +/- bp at 5' end (symmetric with tes_tol)
+tes_tol: 100              # +/- bp at 3' end (symmetric with tss_tol)
+# MUST match the within-cohort consensus (consensus_ignore_tss_multiexon in each cohort
+# config). true = drop the 5' criterion for MULTI-exon transcripts, where the intron chain
+# already discriminates; mono-exons keep tss_tol because they have no chain to anchor them.
+# If this disagrees with the per-cohort setting, the cross-cohort key is STRICTER than the
+# per-cohort one and one isoform gets split into several XNOVEL entries.
+ignore_tss_multiexon: true
+prefix: "XNOVEL"          # id prefix for cross-cohort novel isoforms
+
+# name -> that cohort's final reference_plus_novel GTF (novel = source==novel_source)
+# tanaka DELIBERATELY EXCLUDED from the final reference (2026-07-17, Brooke): it was
+# useful for exploration but is no longer integrated into the pipeline. Do not re-add.
+cohorts:
+  tdpkd:  "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/results/v8/consensus/tdpkd_nanopore.isoforms.gtf.gz"
+  sun:    "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/results/v8/consensus/sun_tdp_overexpression_nanopore.isoforms.gtf.gz"
+
+# name -> that cohort's per-isoform tool provenance (for the pooled-tool global provenance)
+cohort_provenance:
+  tdpkd:  "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/results/v8/consensus/tdpkd_nanopore_novel_provenance.tsv"
+  sun:    "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/results/v8/consensus/sun_tdp_overexpression_nanopore_novel_provenance.tsv"

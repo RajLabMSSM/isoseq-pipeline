@@ -24,7 +24,7 @@ Usage:
   cross_cohort_reference.py --reference gencode.gtf \\
       --cohort tdpkd=.../tdpkd_nanopore_merged_consensus.gtf \\
       --cohort sun=.../sun_..._merged_consensus.gtf \\
-      -o cross_cohort_reference_plus_novel.gtf
+      -o cross_cohort.isoforms.gtf
 """
 import argparse
 import os

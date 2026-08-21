@@ -1,29 +1,24 @@
 #!/usr/bin/env python
 """
-build_union.py
+Concatenate the per-tool, per-group assembler gtfs into one union gtf, giving every
+transcript a globally unique id and tagging its origin.
 
-Concatenate the per-(tool, group) assembler GTFs into ONE union GTF, giving every
-transcript a globally-unique id and tagging its origin. This is the input to the
-end-aware consensus collapse (consensus_endaware.py): unlike the old multi-query
-gffcompare path, we keep every transcript distinct (gffcompare would pre-merge
-same-intron-chain transcripts and discard their 5'/3' ends), so alternative-TSS/TES
-(APA) isoforms survive to the collapse step where end tolerance is applied.
+Every transcript is kept distinct here, rather than pre-merged by gffcompare, because
+gffcompare merges on intron chain alone and drops the 5' and 3' ends. Keeping them lets
+consensus_endaware.py apply an end tolerance and so retain alternative TSS and polyA
+isoforms.
 
-Each transcript_id/gene_id is prefixed "<tool>__<group>__" (ids collide across tools
-and groups -- e.g. STRG.1.1 / BambuTx1 recur), and src_tool / src_group attributes
-are appended so the collapser can recover tool support without gffcompare tracking
-columns.
+Ids are prefixed "<tool>__<group>__" since they collide across tools and groups
+(STRG.1.1 and BambuTx1 both recur), and src_tool / src_group attributes are appended so
+the collapser can recover tool support without gffcompare tracking columns.
 
 With --reference, transcripts whose id is already a reference id are dropped. Bambu and
-IsoQuant emit "extended" annotations = the whole reference passed through verbatim plus
-their novel models, so the union would otherwise carry one copy of GENCODE per tool per
-group (4 x 646k transcripts on v50). Those copies are byte-identical to the reference
-(verified: 0/646,577 differ in exon structure), so gffcompare class-codes them "=" and
-consensus_endaware.py discards them anyway -- dropping them here changes nothing except
-that gffcompare no longer OOMs on a 7.8 GB union. StringTie has no reference ids, so its
-known isoforms still ride through and are still dropped by class code, as before.
-
-Brooke Friedman
+IsoQuant emit extended annotations, meaning the whole reference passed through verbatim
+alongside their novel models, so the union would otherwise carry one copy of the
+annotation per tool per group. Those copies are byte-identical to the reference and are
+discarded downstream by class code regardless, so dropping them here only avoids the
+memory cost. StringTie has no reference ids, so its known isoforms still ride through and
+are still dropped by class code.
 """
 import argparse
 import re

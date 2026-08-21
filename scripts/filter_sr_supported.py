@@ -17,8 +17,6 @@ Outputs, next to the input reference:
   <base>.sr_supported.fa.gz           filtered transcript FASTA
   <base>.sr_supported.provenance.tsv  per-novel decision + reason
   <base>.sr_supported.summary.tsv     counts
-
-Brooke Friedman
 """
 import argparse
 import glob

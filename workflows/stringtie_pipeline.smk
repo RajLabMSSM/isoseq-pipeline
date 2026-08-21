@@ -1,14 +1,14 @@
-# stringtie_pipeline.smk
-# StringTie3 (Shinder et al. 2025) assembly, per group (Join & Call): assemble the
-# one pooled BAM. Mode via config stringtie_mode:
-#   long_read -> -L ; hybrid -> --mix (needs short_read_bam_path in metadata)
+# StringTie3 (Shinder et al. 2025) assembly, run once per group on the pooled bam
 
 stringtie         = "/sc/arion/projects/ad-omics/data/software/stringtie-3.0.3.Linux_x86_64/stringtie"
 stringtie_threads = 4
-stringtie_mode    = config.get("stringtie_mode", "long_read")   # "long_read" | "hybrid"
+stringtie_mode    = config.get("stringtie_mode", "long_read")   # long_read uses -L, hybrid uses --mix
+
+# -t turns off coverage-based trimming of transcript ends. only has an effect in --mix mode
+stringtie_mix_end_trim_flag = "-t " if config.get("stringtie_mix_disable_end_trim", True) else ""
 
 
-# a group's short-read BAMs (hybrid mode), skipping NA/missing
+# short-read bams for a group, skipping samples with no path in the metadata
 def group_short_bams(group):
     paths = []
     for s in sample_groups[group]:
@@ -18,31 +18,36 @@ def group_short_bams(group):
     return paths
 
 
-# long-read pooling is the shared pool_group_bams rule (Snakefile); this is short-read only
+# long reads are pooled by pool_group_bams in the Snakefile, this is the short-read equivalent
 rule stringtie_pool_short_bams:
     input:
         bams = lambda wc: group_short_bams(wc.group)
     output:
-        bam = out_folder + "stringtie3/{group}/" + data_code + "_{group}.pooled.short.bam",
-        bai = out_folder + "stringtie3/{group}/" + data_code + "_{group}.pooled.short.bam.bai"
+        bam = temp(out_folder + "stringtie3/{group}/" + data_code + "_{group}.pooled.short.bam"),
+        bai = temp(out_folder + "stringtie3/{group}/" + data_code + "_{group}.pooled.short.bam.bai")
+    params:
+        ref = ref_genome + ".fa"
     threads: 4
     shell:
-        "conda activate isoseq-pipeline; "
-        "samtools merge -f -@ {threads} {output.bam} {input.bams}; "
-        "samtools index {output.bam}"
+        """
+        conda activate isoseq-pipeline
+        samtools merge -f -@ {threads} --reference {params.ref} {output.bam} {input.bams}
+        samtools index {output.bam}
+        """
 
 
 def stringtie_run_inputs(wildcards):
     d = {
         "gtf":      ref_gtf,
         "long_bam": out_folder + "pooled/%s_%s.pooled.bam" % (data_code, wildcards.group),
+        "long_bai": out_folder + "pooled/%s_%s.pooled.bam.bai" % (data_code, wildcards.group),
     }
     if stringtie_mode == "hybrid":
         d["short_bam"] = out_folder + "stringtie3/%s/%s_%s.pooled.short.bam" % (wildcards.group, data_code, wildcards.group)
     return d
 
 
-# -L = long-read mode; --mix takes the long bam as the 2nd input
+# --mix expects the short-read bam first and the long-read bam second
 rule run_stringtie:
     input:
         unpack(stringtie_run_inputs)
@@ -51,7 +56,7 @@ rule run_stringtie:
     threads: stringtie_threads
     run:
         if stringtie_mode == "hybrid":
-            shell("{stringtie} -p {threads} --mix -G {input.gtf} -o {output.gtf} "
+            shell("{stringtie} -p {threads} --mix {stringtie_mix_end_trim_flag}-G {input.gtf} -o {output.gtf} "
                   "{input.short_bam} {input.long_bam}")
         else:
             shell("{stringtie} -p {threads} -L -G {input.gtf} -o {output.gtf} {input.long_bam}")

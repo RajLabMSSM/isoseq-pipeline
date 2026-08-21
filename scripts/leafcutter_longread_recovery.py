@@ -23,8 +23,6 @@ the short reads, so recover_stringtie/isoquant are NOT pure-long-read evidence.
 Matching: (chrom, start, end), strand-agnostic (ONT cDNA strand can flip), +/- WOBBLE bp,
 implemented as a dilated query (each leafcutter junction probes its 25 neighbour keys
 against the exact per-tool intron sets). novel = junction not in GENCODE (+/- WOBBLE).
-
-Brooke Friedman
 """
 import argparse
 import gzip

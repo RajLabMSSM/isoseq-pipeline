@@ -1,0 +1,99 @@
+# Cross-cohort combine. this spans every cohort, so it is a separate workflow from the
+# per-cohort Snakefile. run it once each cohort's own pipeline has finished
+#
+#   cd pipelines/isoseq-pipeline/cross_cohort
+#   snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
+
+configfile: "cross_cohort_config.yaml"
+
+SCRIPTS  = "/sc/arion/projects/als-omics/brooke-phd-thesis/pipelines/isoseq-pipeline/scripts"
+FASTA_SH = "/sc/arion/projects/als-omics/brooke-phd-thesis/pipelines/salmon-pipeline/scripts/make_transcriptome_fasta.sh"
+PYTHON   = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
+
+OUT     = config["output_dir"]
+NAME    = config["output_name"]
+GENOME  = config["genome_fasta"]
+IGN_TSS = config.get("ignore_tss_multiexon", True)
+
+cohort_args = " ".join("--cohort %s=%s" % (k, v) for k, v in config["cohorts"].items())
+cohort_prov_args = " ".join("--cohort-provenance %s=%s" % (k, v)
+                            for k, v in config["cohort_provenance"].items())
+
+######
+## Main pipeline definition
+######
+
+rule all:
+    input:
+        OUT + NAME + ".gtf.gz",
+        OUT + NAME + ".fa.gz",
+        OUT + "cross_cohort_novel_provenance.tsv",
+        OUT + "tracking_numbers_final_numbers.tsv",
+        OUT + "cross_cohort_global_provenance.tsv"
+
+
+# union of the per-cohort novels, collapsed end-aware with the same tolerances as the
+# within-cohort consensus, then the reference appended verbatim. the collapse settings
+# must match the per-cohort config or one isoform is split across several entries
+rule cross_cohort_union:
+    input:
+        ref     = config["reference"],
+        cohorts = list(config["cohorts"].values())
+    output:
+        gtf     = OUT + NAME + ".gtf.gz",
+        prov    = OUT + "cross_cohort_novel_provenance.tsv",
+        summary = OUT + "tracking_numbers_final_numbers.tsv"
+    params:
+        plain       = OUT + NAME + ".gtf",
+        cohort_args = cohort_args,
+        source      = config["novel_source"],
+        wobble      = config["wobble"],
+        tss         = config["tss_tol"],
+        tes         = config["tes_tol"],
+        ign_tss     = "--ignore-tss-multiexon" if IGN_TSS else "",
+        prefix      = config["prefix"]
+    shell:
+        """
+        {PYTHON} {SCRIPTS}/cross_cohort_novel_union.py \
+        --reference {input.ref} \
+        {params.cohort_args} \
+        --novel-source {params.source} \
+        --wobble {params.wobble} \
+        --tss-tol {params.tss} \
+        --tes-tol {params.tes} {params.ign_tss} \
+        --prefix {params.prefix} \
+        --provenance-out {output.prov} \
+        --summary-out {output.summary} \
+        -o {params.plain}
+        gzip -nf {params.plain}
+        """
+
+
+# emitted here so one run produces the whole reference: gtf, fasta and provenance
+rule cross_cohort_fasta:
+    input:
+        gtf = OUT + NAME + ".gtf.gz"
+    output:
+        fa = OUT + NAME + ".fa.gz"
+    params:
+        genome = GENOME,
+        script = FASTA_SH
+    shell:
+        "bash {params.script} {input.gtf} {params.genome} {output.fa}"
+
+
+# pools per-tool support across the cohorts that contributed each cross-cohort isoform
+rule cross_cohort_global_provenance:
+    input:
+        cross       = OUT + "cross_cohort_novel_provenance.tsv",
+        cohort_prov = list(config["cohort_provenance"].values())
+    output:
+        OUT + "cross_cohort_global_provenance.tsv"
+    params:
+        cohort_prov_args = cohort_prov_args
+    shell:
+        """
+        {PYTHON} {SCRIPTS}/cross_cohort_global_provenance.py \
+        --cross-provenance {input.cross} {params.cohort_prov_args} \
+        -o {output}
+        """

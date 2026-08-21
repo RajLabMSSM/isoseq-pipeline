@@ -19,8 +19,6 @@ Notes on definitions (so the numbers are not misread):
     duplicate/near-duplicate STRUCTURE merged across tools + within-tool end dups.
   * raw_*_all includes the reference transcripts bambu/isoquant pass through verbatim,
     so it is much larger than the novel candidate count -- both are reported.
-
-Brooke Friedman
 """
 import argparse
 import glob
@@ -88,6 +86,35 @@ def read_pass_ids(path):
             if len(f) > ii:
                 ids.add(f[ii])
     return ids
+
+
+def read_exon_split(path):
+    """mono/multi-exon split of the SQANTI-passed novels, plus the purely-intronic
+    mono-exon subset. Mono-exons bypass SQANTI's ML classifier, so this split is the
+    headline sensitivity axis: every novel count should be quotable with and without them."""
+    mono = multi = mono_intronic = 0
+    with opentext(path) as fh:
+        hdr = fh.readline().rstrip("\n").split("\t")
+        try:
+            ei = hdr.index("exons")
+        except ValueError:
+            return None
+        ci = hdr.index("structural_category") if "structural_category" in hdr else None
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            if len(f) <= ei:
+                continue
+            try:
+                n = int(f[ei])
+            except ValueError:
+                continue
+            if n == 1:
+                mono += 1
+                if ci is not None and len(f) > ci and f[ci].strip().replace("_", " ") == "genic intron":
+                    mono_intronic += 1
+            else:
+                multi += 1
+    return mono, multi, mono_intronic
 
 
 def count_lines_minus_header(path):
@@ -185,8 +212,19 @@ def main():
     rows.append(("sqanti_pass", sqanti_pass))
     rows.append(("sqanti_removed", n_consensus - sqanti_pass))
     rows.append(("final_novel", sqanti_pass))
+    split = read_exon_split(args.sqanti_classification)
+    if split is not None:
+        mono, multi, mono_intronic = split
+        rows.append(("final_novel_multiexon", multi))
+        rows.append(("final_novel_monoexon", mono))
+        rows.append(("final_novel_monoexon_genic_intron", mono_intronic))
+        rows.append(("pct_novel_monoexon", round(100.0 * mono / sqanti_pass, 1) if sqanti_pass else 0))
+        rows.append(("pct_monoexon_genic_intron", round(100.0 * mono_intronic / mono, 1) if mono else 0))
     rows.append(("reference_transcripts", n_ref))
     rows.append(("final_total", n_ref + sqanti_pass))
+    if split is not None:
+        rows.append(("final_novel_EXCL_monoexon", multi))
+        rows.append(("final_total_EXCL_monoexon", n_ref + multi))
 
     with open(args.output, "w") as out:
         out.write("metric\tvalue\n")

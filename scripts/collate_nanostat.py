@@ -17,7 +17,6 @@ This script globs the per-sample raw + aligned files written by the qc pipeline
 and emits one row per (sample, stage) with the summary metrics as columns.
 
 Mirrors collate_read_lengths.R's interface: --inFolder to search, -o for output.
-Brooke Friedman
 """
 import argparse
 import glob

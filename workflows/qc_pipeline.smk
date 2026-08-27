@@ -213,7 +213,8 @@ rule fastqc:
 # Picard
 rule picard:
     input:
-        bam = output_bam + ".bai",
+        bam = output_bam,
+        bai = output_bam + ".bai",
         #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam",
         reflat = reflat_file
     output:

@@ -11,7 +11,7 @@ shell.prefix("export PS1=""; ml anaconda3; CONDA_BASE=$(conda info --base); sour
 longcallr = "/sc/arion/projects/ad-omics/data/software/longcallR/target/release/longcallR"
 asj_to_bed = "/sc/arion/projects/ad-omics/data/software/longcallR/allele_specific/asj_to_bed.py"
 
-rediportal = "/sc/arion/projects/als-omics/microglia_isoseq/isoseq-pipeline/lcr_test/TABLE1_hg38_v3.txt.gz"
+rediportal = "/sc/arion/projects/ad-omics/data/references//editing/TABLE1_hg38_v3.txt.gz"
 region_string = ""
 
 ref_genome = config["ref_genome"] + ".fa"
@@ -20,12 +20,18 @@ metadata = config["metadata"]
 data_code = config["data_code"]
 outFolder = config["out_folder"]
 prep = config["prep"]
-phased_vcf = config["phased_vcf"] # make optional later
-phased_vcf_string = "--input-vcf " + phased_vcf + " --direct-haplotag"
+if "phased_vcf" in config.keys():
+    phased_vcf = config["phased_vcf"] # make optional later
+    phased_vcf_string = "--input-vcf " + phased_vcf + " --direct-haplotag"
+else:
+    phased_vcf_string = ""
 #gwas = "/sc/arion/projects/ad-omics/data/references/GWAS/Bellenguez_AD/Bellenguez_2021.processed.tsv.gz"
+# file either TSV or XLSX
+if ".tsv" in metadata:
+    meta_df = pd.read_csv(metadata, sep = '\t')
+if ".xlsx" in metadata:
+    meta_df = pd.read_excel(metadata)
 
-# read in metadata
-meta_df = pd.read_excel(metadata)
 samples = meta_df['sample']
 
 # for testing
@@ -36,7 +42,7 @@ samples = meta_df['sample']
 metadata_dict = meta_df.set_index("sample").T.to_dict()
 
 if prep == "pacbio":
-    input_bam = "results/{sample}/alignment" + "/{sample}.aligned.bam"
+    input_bam = "results/{sample}/pbmm2" + "/{sample}.aligned.bam"
     longcallr_string = "hifi-masseq"
 
 if prep == "nanopore_direct":
@@ -179,7 +185,7 @@ rule integrate_gwas:
             liftover_string = "--liftover hg19"
         else:
             liftover_string = ""
-        gwas_out = outFolder + "GWAS/" + wildcards.GWAS
+        gwas_out = outFolder + "/GWAS/" + wildcards.GWAS
         shell("python {params.script} \
             --results-dir {outFolder} \
             --mode ase \

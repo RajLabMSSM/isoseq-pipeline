@@ -54,7 +54,7 @@ pbmm2_threads = "8"
 #chromosomes = [str(i) for i in range(1,23)] + ["X", "Y", "M"]
 
 if prep == "pacbio":
-    output_bam = out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
+    output_bam = out_folder + "{sample}/pbmm2" + "/{sample}.aligned.bam"
     #output_bam = out_folder + "merged_bam/" + data_code + ".flnc.aligned.bam"
 
 if prep == "nanopore_direct":
@@ -96,12 +96,13 @@ rule align_flnc_bam:
     input:
         mmi
     output:
-        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
+        bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam",
+        bai = out_folder + "{sample}/pbmm2/{sample}.aligned.bam.bai"
     run:
         input_bam = metadata_dict[wildcards.sample]["flnc_bam_path"]
         shell("pbmm2 align --sort -j {pbmm2_threads} --sort-threads 4 -m 3G --preset=ISOSEQ \
-        --log-level INFO --unmapped {mmi} {input_bam} | \
-        samtools calmd -b - {genome} > {output.bam}")
+        --log-level INFO {mmi} {input_bam} > {output.bam}; \
+        samtools index {output.bam}")
 
 rule extractJunctions:
     input:
@@ -171,7 +172,7 @@ rule sam_to_bam:
         params:
             tmp = out_folder + "{sample}/alignment" + "/{sample}.tmp.bam"
         output:
-            output_bam
+            out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
             #out_folder + "{sample}/alignment" + "/{sample}.aligned.bam"
         shell:
             'ml samtools;'
@@ -212,7 +213,7 @@ rule fastqc:
 # Picard
 rule picard:
     input:
-        bam = output_bam,
+        bam = output_bam + ".bai",
         #bam = out_folder + "{sample}/pbmm2/{sample}.aligned.bam",
         reflat = reflat_file
     output:
@@ -229,17 +230,15 @@ rule picard:
 # Samtools
 rule samtools:
     input:
-        output_bam
-        #out_folder + "{sample}/pbmm2/{sample}.aligned.bam"
+        bam = output_bam,
+        bai = output_bam + ".bai"
     output:
         idx = out_folder + "{sample}/qc/{sample}.idxstat.txt",
         flag = out_folder +"{sample}/qc/{sample}.flagstat.txt"
-        #bai = out_folder + "{sample}/pbmm2/{sample}.aligned.bam.bai"
     shell:
         "ml samtools;"
-        "samtools index {input};"
-        "samtools flagstat {input} > {output.flag};"
-        "samtools idxstat {input} > {output.idx}"
+        "samtools flagstat {input.bam} > {output.flag};"
+        "samtools idxstat {input.bam} > {output.idx}"
 
 ## get read length distributions
 rule read_lengths:

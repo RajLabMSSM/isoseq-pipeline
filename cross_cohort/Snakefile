@@ -18,6 +18,9 @@ IGN_TSS = config.get("ignore_tss_multiexon", True)
 cohort_args = " ".join("--cohort %s=%s" % (k, v) for k, v in config["cohorts"].items())
 cohort_prov_args = " ".join("--cohort-provenance %s=%s" % (k, v)
                             for k, v in config["cohort_provenance"].items())
+# the membership script takes the same files under a different flag name
+cohort_member_args = " ".join("--cohort %s=%s" % (k, v)
+                              for k, v in config["cohort_provenance"].items())
 
 ######
 ## Main pipeline definition
@@ -29,7 +32,8 @@ rule all:
         OUT + NAME + ".fa.gz",
         OUT + "cross_cohort_novel_provenance.tsv",
         OUT + "tracking_numbers_final_numbers.tsv",
-        OUT + "cross_cohort_global_provenance.tsv"
+        OUT + "cross_cohort_global_provenance.tsv",
+        OUT + "cross_cohort_tool_membership_by_cohort.tsv"
 
 
 # union of the per-cohort novels, collapsed end-aware with the same tolerances as the
@@ -95,5 +99,25 @@ rule cross_cohort_global_provenance:
         """
         {PYTHON} {SCRIPTS}/cross_cohort_global_provenance.py \
         --cross-provenance {input.cross} {params.cohort_prov_args} \
+        -o {output}
+        """
+
+
+# per-cohort per-tool membership for every cross-cohort isoform. produced on every build, not by
+# hand, because XNOVEL ids are renumbered between vintages: a membership file from another build
+# shares enough ids with this one to merge cleanly and be wrong in every row. the reader guards on
+# id-set equality, and that guard only helps if a matching file actually exists
+rule cross_cohort_tool_membership:
+    input:
+        cross       = OUT + "cross_cohort_novel_provenance.tsv",
+        cohort_prov = list(config["cohort_provenance"].values())
+    output:
+        OUT + "cross_cohort_tool_membership_by_cohort.tsv"
+    params:
+        cohort_args = cohort_member_args
+    shell:
+        """
+        {PYTHON} {SCRIPTS}/cross_cohort_tool_membership_by_cohort.py \
+        --cross-provenance {input.cross} {params.cohort_args} \
         -o {output}
         """

@@ -20,6 +20,11 @@ overlapping a known gene (has cmp_ref) inherits that gene_id (novel ISOFORM of a
 known gene); intergenic novels get a fresh <prefix>G_ locus. Each novel carries a
 `cohorts "tdpkd,sun"` provenance attribute.
 
+NOT ON THE LIVE PATH. The cross-cohort build runs cross_cohort_novel_union.py; this
+script is kept for reference only, and its gene assignment still has the cmp_ref bug
+fixed in build_reference_with_novel.py / assign_novel_genes.py. Do not resurrect it
+without porting that fix.
+
 Usage:
   cross_cohort_reference.py --reference gencode.gtf \\
       --cohort tdpkd=.../tdpkd_nanopore_merged_consensus.gtf \\

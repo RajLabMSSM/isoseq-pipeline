@@ -1,6 +1,7 @@
 # Cross-cohort combine: UNION of the SQANTI-passed NOVEL isoforms from every cohort,
 # collapsed with the SAME end-aware rule as the within-cohort consensus (identical intron
-# chains within +-wobble AND 5'/3' ends within tolerance merge; everything else kept),
+# chains within +-wobble AND 3' ends within tolerance merge, with the 5' criterion applied
+# to mono-exons only; everything else kept),
 # then GENCODE appended verbatim. Run after each cohort's per-cohort pipeline has produced
 # its <dc>.isoforms.gtf.gz + _novel_provenance.tsv.
 

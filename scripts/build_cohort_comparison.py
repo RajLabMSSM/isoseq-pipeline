@@ -20,8 +20,8 @@ import statistics as st
 from collections import defaultdict
 
 BASE = "/sc/arion/projects/als-omics/brooke-phd-thesis"
-OUT_WIDE = f"{BASE}/plots/cross_cohort_comparison.tsv"
-OUT_LONG = f"{BASE}/plots/cross_cohort_comparison_long.tsv"
+OUT_WIDE = f"{BASE}/tables/cross_cohort_comparison.tsv"
+OUT_LONG = f"{BASE}/tables/cross_cohort_comparison_long.tsv"
 
 COHORTS = ["tdpkd", "sun", "tanaka"]
 DC = {"tdpkd": "tdpkd_nanopore",

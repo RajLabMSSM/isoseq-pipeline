@@ -81,7 +81,7 @@ minimap2 are called by absolute path.
 4. QC with samtools, RNA-SeQC, Picard and NanoStat, collected into one MultiQC report
 5. Pool each group's alignments into a single BAM, the shared input to all three assemblers
 6. Discover isoforms per group with Bambu, IsoQuant and StringTie3
-7. Take the end-aware union of the three, keeping alternative TSS and polyA isoforms distinct
+7. Take the end-aware union of the three, keeping alternative polyA isoforms distinct
 8. Filter the novel isoforms with SQANTI3 QC and the rules filter
 9. Emit the reference plus the surviving novel isoforms, as GTF and transcript FASTA
 

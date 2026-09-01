@@ -20,6 +20,24 @@ nanopore_alignment:
   queue: premium
   himem: "-R himem"
 
+pychopper:
+  cores: 8
+  mem: 16000
+  time: 360
+  queue: premium
+
+build_junc_bed:
+  cores: 1
+  mem: 8000
+  time: 60
+  queue: express
+
+cross_cohort_fasta:
+  cores: 2
+  mem: 12000
+  time: 120
+  queue: express
+
 sam_to_bam:
   cores: 8
   mem: 16000
@@ -32,10 +50,13 @@ rnaseqc:
   time: 120
   queue: express
 
+# 120 min was too tight: tanaka KD5 (deepest sample) needed 129 min and was
+# SIGKILLed at the runlimit *after* writing its output -> snakemake hung forever
+# waiting for a jobfinished marker that never came.
 picard:
   cores: 4
   mem: 16000
-  time: 120
+  time: 360
   queue: express
 
 fastqc:
@@ -84,11 +105,14 @@ pool_group_bams:
   mem: 3000
   time: 720
 
+# gffcompare here holds the whole union + the reference in RAM. With GENCODE v50 (646k
+# transcripts) even the passthrough-filtered union is ~450k transcripts, so keep headroom:
+# the old 2x8000 (=16G) was OOM-killed at 15.6G on the unfiltered 3.05M-transcript union.
 consensus_isoforms:
-  cores: 2
-  mem: 8000
-  time: 120
-  queue: express
+  cores: 4
+  mem: 16000
+  time: 240
+  queue: premium
 
 sqanti_qc:
   cores: 12
@@ -123,9 +147,10 @@ cupcake_collapse:
 
 bambu_create_annotation:
   cores: 1
-  mem: 16000
-  time: 120
-  queue: express
+  mem: 64000
+  time: 360
+  queue: premium
+  himem: "-R himem"
 
 run_bambu:
   cores: 8

@@ -3,9 +3,14 @@
 End-aware cross-tool consensus collapse.
 
 gffcompare merges transcripts on intron chain alone and drops the 5' and 3' ends, which
-loses alternative TSS and polyA isoforms. Here two transcripts collapse only when their
-intron chains agree within junction_wobble, their 5' ends agree within tss_tol and their
-3' ends agree within tes_tol. Single-exon transcripts collapse on the two ends alone.
+loses alternative polyA isoforms. Here two transcripts collapse only when their intron
+chains agree within junction_wobble and their 3' ends agree within tes_tol.
+
+With --ignore-tss-multiexon, the default here, the 5' criterion is dropped for
+multi-exon transcripts, where the intron chain already discriminates and ONT 5' ends are
+unreliable. It stays on for single-exon transcripts, which collapse on 5' +-tss_tol and
+3' +-tes_tol alone: with no chain to anchor them, any two mono-exons sharing a 3' end
+would otherwise merge regardless of length.
 
 This is the discovery catalogue, so it errs towards retention. SQANTI downstream is the
 precision filter.

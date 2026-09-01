@@ -3,8 +3,9 @@
 # build_union.py concatenates the assembler gtfs (3 tools x n groups) into one union with
 # globally unique, origin-tagged ids. gffcompare classifies every transcript against the
 # reference, and consensus_endaware.py collapses the novel candidates: two transcripts merge
-# only when their intron chains agree within junction_wobble and both ends agree within
-# tss_tol / tes_tol, so alternative TSS and polyA isoforms stay distinct.
+# only when their intron chains agree within junction_wobble and their 3' ends within tes_tol,
+# so alternative polyA isoforms stay distinct. With consensus_ignore_tss_multiexon (the
+# default) the 5' criterion applies to mono-exons only, which have no chain to anchor them.
 #
 
 gffcompare = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"

@@ -5,8 +5,8 @@ transcript a globally unique id and tagging its origin.
 
 Every transcript is kept distinct here, rather than pre-merged by gffcompare, because
 gffcompare merges on intron chain alone and drops the 5' and 3' ends. Keeping them lets
-consensus_endaware.py apply an end tolerance and so retain alternative TSS and polyA
-isoforms.
+consensus_endaware.py apply its own end tolerance and so retain alternative polyA
+isoforms (and alternative TSS for mono-exons, the only case where the 5' end is used).
 
 Ids are prefixed "<tool>__<group>__" since they collide across tools and groups
 (STRG.1.1 and BambuTx1 both recur), and src_tool / src_group attributes are appended so

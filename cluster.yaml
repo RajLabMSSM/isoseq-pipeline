@@ -1,8 +1,4 @@
-# cluster.yaml
-# LSF job submission parameters for isoseq-pipeline
-# Place this file in the pipeline directory (where the Snakefile lives)
-# Always run snakejob from the pipeline directory
-
+# LSF resources per rule for ~/bin/snakejob; run from the folder that holds the Snakefile
 __default__:
   queue: express
   cores: 8
@@ -12,13 +8,6 @@ __default__:
   output: logs/{rule}:{wildcards}.stdout
   error: logs/{rule}:{wildcards}.stderr
   himem: ""
-
-nanopore_alignment:
-  cores: 8
-  mem: 32000
-  time: 360
-  queue: premium
-  himem: "-R himem"
 
 pychopper:
   cores: 8
@@ -32,16 +21,17 @@ build_junc_bed:
   time: 60
   queue: express
 
-cross_cohort_fasta:
-  cores: 2
-  mem: 12000
-  time: 120
-  queue: express
-
-sam_to_bam:
+nanopore_alignment:
   cores: 8
-  mem: 16000
-  time: 120
+  mem: 32000
+  time: 360
+  queue: premium
+  himem: "-R himem"
+
+samtools_qc:
+  cores: 4
+  mem: 3000
+  time: 60
   queue: express
 
 rnaseqc:
@@ -50,18 +40,10 @@ rnaseqc:
   time: 120
   queue: express
 
-# 120 min was too tight: tanaka KD5 (deepest sample) needed 129 min and was
-# SIGKILLed at the runlimit *after* writing its output -> snakemake hung forever
-# waiting for a jobfinished marker that never came.
+# 120 min was too short for the deepest library
 picard:
   cores: 4
   mem: 16000
-  time: 360
-  queue: express
-
-fastqc:
-  cores: 8
-  mem: 3000
   time: 360
   queue: express
 
@@ -71,7 +53,7 @@ read_lengths:
   time: 60
   queue: express
 
-collate_lengths:
+longread_qc_tables:
   cores: 1
   mem: 8000
   time: 60
@@ -83,67 +65,10 @@ multiQC:
   time: 60
   queue: express
 
-collapseAnnotationGlobal:
-  cores: 1
-  mem: 8000
-  time: 120
-  queue: express
-
-samtools_qc:
-  cores: 4
-  mem: 3000
-  time: 60
-  queue: express
-
-run_stringtie:
-  cores: 4
-  mem: 6000
-  time: 720
-
 pool_group_bams:
   cores: 8
   mem: 3000
   time: 720
-
-# gffcompare here holds the whole union + the reference in RAM. With GENCODE v50 (646k
-# transcripts) even the passthrough-filtered union is ~450k transcripts, so keep headroom:
-# the old 2x8000 (=16G) was OOM-killed at 15.6G on the unfiltered 3.05M-transcript union.
-consensus_isoforms:
-  cores: 4
-  mem: 16000
-  time: 240
-  queue: premium
-
-sqanti_qc:
-  cores: 12
-  mem: 16000
-  time: 720
-  queue: premium
-
-sqanti_filter:
-  cores: 1
-  mem: 16000
-  time: 120
-  queue: express
-
-talon_filter:
-  cores: 1
-  mem: 30000
-  queue: premium
-  time: 720
-  himem: "-R himem"
-
-talon_label_reads:
-  cores: 8
-  mem: 3000
-  time: 500
-
-cupcake_collapse:
-  cores: 16
-  mem: 24000
-  time: '144:00'
-  queue: premium
-  himem: "-R himem"
 
 bambu_create_annotation:
   cores: 1
@@ -166,80 +91,38 @@ run_isoquant:
   queue: premium
   himem: "-R himem"
 
-run_talon_simul:
-  cores: 8
-  mem: 24000
-  time: 72:00
-  queue: premium
-  himem: "-R himem"
-
-merge_flnc_bams:
-  cores: 1
-  mem: 3000
-  time: 1440
-  queue: premium
-
-chain_samples:
-  time: '180'
-  mem: 3000
-  cores: 30
-
-samtools:
-  cores: 8
-  mem: 3000
-  time: 60
-
-minimap:
-  cores: 16
-  mem: 3000
-  time: 360
-
-SQANTI:
+run_stringtie:
+  cores: 4
+  mem: 6000
   time: 720
-  mem: 3000
-  cores: 8
 
-TAMA_collapse:
-  cores: 16
-  mem: 3000
-  time: 60
+# gffcompare holds the whole union and the reference in memory
+consensus_isoforms:
+  cores: 4
+  mem: 16000
+  time: 240
+  queue: premium
 
-CCS:
-  time: 72:00
-  queue: 'long'
-  mem: 25000
-  cores: 36
+sqanti_qc:
+  cores: 12
+  mem: 16000
+  time: 720
+  queue: premium
 
-LIMA:
+sqanti_filter:
+  cores: 1
+  mem: 16000
+  time: 120
+  queue: express
+
+cross_cohort_genes:
+  cores: 1
+  mem: 16000
+  time: 120
+  queue: express
+
+cross_cohort_fasta:
   cores: 2
   mem: 12000
-
-refine:
-  cores: 4
-  mem: 25000
-
-align_flnc_bam:
-  cores: 16
-  mem: 3000
-  time: 720
-
-split_flnc_bam:
-  cores: 1
-  mem: 3000
-  time: 719
-
-split_unmapped_flnc_bam:
-  cores: 1
-  mem: 3000
-  time: 719
-
-isoseq3_cluster:
-  queue: premium
-  cores: 28
-  mem: 3000
-  time: 2880
-
-demultiplex_abundances:
-  cores: 16
-  mem: 3000
-  time: '720'
+  time: 120
+  queue: express

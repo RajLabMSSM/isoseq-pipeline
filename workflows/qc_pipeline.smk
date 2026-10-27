@@ -1,172 +1,101 @@
-# Alignment and QC. one aligner is active per run, selected by prep
-
-minimap2_bin = "/sc/arion/projects/ad-omics/data/software/minimap2-2.31/minimap2"
-genome = referenceFa
-rrna   = "/sc/arion/projects/H_PBG/REFERENCES/GRCh38/Gencode/release_30/gencode.v30.rRNA.interval.list"
-
-output_cram = out_folder + "{sample}/alignment/{sample}.aligned.cram"
-qc_bam      = out_folder + "{sample}/alignment/{sample}.qc.bam"
-
-# minimap2 preset per library prep, overridable from config
-if prep == "nanopore_cdna":
-    minimap_preset = "splice:hq"; minimap_flags = "-ub"
-if prep == "nanopore_direct":
-    minimap_preset = "splice";    minimap_flags = "-uf -k14"
-if prep == "pacbio":
-    minimap_preset = "splice:hq"; minimap_flags = "-uf"
-if config.get('minimap_preset'):
-    minimap_preset = config['minimap_preset']
-if config.get('minimap_flags'):
-    minimap_flags = config['minimap_flags']
-
+minimap2_bin      = "/sc/arion/projects/ad-omics/data/software/minimap2-2.31/minimap2"
+output_cram       = out_folder + "{sample}/alignment/{sample}.aligned.cram"
+qc_bam            = out_folder + "{sample}/alignment/{sample}.qc.bam"
+rrna              = out_folder + data_code + ".rRNA.interval_list"
 combined_junc_bed = out_folder + data_code + ".combined_junctions.bed"
+pychopper_stats   = expand(out_folder + "{sample}/pychopper/{sample}.stats.tsv", sample=samples)
 
 
-# raw pre-alignment reads for NanoStat, ont fastq or pacbio unaligned flnc bam
-def raw_reads(wildcards):
-    if prep == "pacbio":
-        return pacbio_flnc(wildcards.sample)
+def raw_fastq(wildcards):
     return metadata_dict[wildcards.sample]["long_read_fastq"]
 
 
-def junc_bed_for_alignment():
-    return combined_junc_bed if use_short_read_junctions else junctions_bed
+# minimap2 --junc-bed: the GENCODE junction bed plus the cohort's STAR introns (>= short_read_junc_min_uniq
+# unique reads, canonical motif), so ONT reads are aligned to splice sites the short reads confirm.
+# exclude_samples are dropped here (tdpkd: TDP-5 aberrant differentiation, CTRL-4 low-depth outlier).
+# The published v9 build (2026-09-21) did not drop them here: its tdpkd junc-bed had 508,354 short-read
+# junctions, vs 500,324 with the two dropped.
+rule build_junc_bed:
+    input:
+        anno = config['junctions_bed'],
+        sj   = junction_folder
+    output:
+        combined_junc_bed
+    params:
+        exclude = ",".join(sorted(excluded_samples))
+    shell:
+        """
+        python scripts/build_junc_bed.py \
+        --annotation {input.anno} \
+        --sj_folder {input.sj} \
+        --min_uniq {config[short_read_junc_min_uniq]} --canonical_only \
+        --exclude_samples '{params.exclude}' \
+        -o {output}
+        """
 
 
-# pychopper output for cdna, otherwise the raw long reads
-def align_fastq(wildcards):
-    if prep == "nanopore_cdna" and use_pychopper:
-        return out_folder + "{s}/pychopper/{s}.full_length.fastq".format(s=wildcards.sample)
-    return metadata_dict[wildcards.sample]["long_read_fastq"]
+rule pychopper:
+    input:
+        fastq = raw_fastq
+    output:
+        fl    = temp(out_folder + "{sample}/pychopper/{sample}.full_length.fastq"),
+        stats = out_folder + "{sample}/pychopper/{sample}.stats.tsv"
+    params:
+        pdir = out_folder + "{sample}/pychopper",
+        pre  = out_folder + "{sample}/pychopper/{sample}"
+    threads: 8
+    shell:
+        """
+        conda activate pychopper_env
+        mkdir -p {params.pdir}
+        zcat -f {input.fastq} > {params.pre}.input.fastq
+        pychopper -k {config[pychopper_kit]} -m edlib -t {threads} \
+        -r {params.pre}.report.pdf \
+        -u {params.pre}.unclassified.fastq \
+        -w {params.pre}.rescued.fastq \
+        -S {params.pre}.stats.tsv \
+        {params.pre}.input.fastq {params.pre}.primary.fastq
+        cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}
+        rm -f {params.pre}.input.fastq {params.pre}.primary.fastq {params.pre}.unclassified.fastq {params.pre}.rescued.fastq
+        """
 
 
-#####
-## Alignment
-#####
-
-# annotation bed12 plus empirical STAR introns, combined into one --junc-bed
-if use_short_read_junctions:
-
-    rule build_junc_bed:
-        input:
-            anno = junctions_bed,
-            sj   = junction_folder
-        output:
-            combined_junc_bed
-        params:
-            script    = "scripts/build_junc_bed.py",
-            min_uniq  = short_read_junc_min_uniq,
-            canonical = "--canonical_only" if short_read_junc_canonical_only else ""
-        shell:
-            """
-            python {params.script} \
-            --annotation {input.anno} \
-            --sj_folder {input.sj} \
-            --min_uniq {params.min_uniq} {params.canonical} \
-            -o {output}
-            """
+rule nanopore_alignment:
+    input:
+        index = config['ref_genome_index'],
+        junc  = combined_junc_bed,
+        fastq = out_folder + "{sample}/pychopper/{sample}.full_length.fastq"
+    output:
+        sam = temp(out_folder + "{sample}/alignment/{sample}.aligned.sam")
+    threads: 8
+    shell:
+        """
+        {minimap2_bin} \
+        -ax {config[minimap_preset]} {config[minimap_flags]} \
+        --secondary=no -G 500k \
+        --junc-bed {input.junc} \
+        -t {threads} \
+        {input.index} {input.fastq} \
+        > {output.sam}
+        """
 
 
-if not config.get('ref_genome_index'):
-
-    rule create_index:
-        input:
-            genome
-        output:
-            mmi
-        shell:
-            "{minimap2_bin} -x {minimap_preset} -d {output} {input}"
-
-
-# orient and trim full-length cdna reads, and rescue fused reads
-if prep == "nanopore_cdna" and use_pychopper:
-
-    rule pychopper:
-        input:
-            fastq = lambda wc: metadata_dict[wc.sample]["long_read_fastq"]
-        output:
-            fl = temp(out_folder + "{sample}/pychopper/{sample}.full_length.fastq")
-        params:
-            pdir  = out_folder + "{sample}/pychopper",
-            pre   = out_folder + "{sample}/pychopper/{sample}",
-            kit   = pychopper_kit,
-            qflag = ("-q " + str(pychopper_q)) if pychopper_q is not None else ""
-        threads: 8
-        shell:
-            """
-            conda activate pychopper_env
-            mkdir -p {params.pdir}
-            zcat -f {input.fastq} > {params.pre}.input.fastq
-            pychopper -k {params.kit} -m edlib -t {threads} {params.qflag} \
-            -r {params.pre}.report.pdf \
-            -u {params.pre}.unclassified.fastq \
-            -w {params.pre}.rescued.fastq \
-            -S {params.pre}.stats.tsv \
-            {params.pre}.input.fastq {params.pre}.primary.fastq
-            cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}
-            rm -f {params.pre}.input.fastq {params.pre}.primary.fastq {params.pre}.unclassified.fastq {params.pre}.rescued.fastq
-            """
+rule sam_to_cram:
+    input:
+        out_folder + "{sample}/alignment/{sample}.aligned.sam"
+    output:
+        cram = output_cram,
+        crai = output_cram + ".crai"
+    threads: 8
+    shell:
+        """
+        samtools sort -@ {threads} -m 2G -O bam {input} | \
+        samtools view -@ {threads} -C -T {genome} -o {output.cram} -
+        samtools index {output.cram}
+        """
 
 
-if prep in ("nanopore_cdna", "nanopore_direct"):
-
-    rule nanopore_alignment:
-        input:
-            index = mmi,
-            junc  = junc_bed_for_alignment(),
-            fastq = align_fastq
-        output:
-            sam = temp(out_folder + "{sample}/alignment/{sample}.aligned.sam")
-        threads: 8
-        shell:
-            """
-            {minimap2_bin} \
-            -ax {minimap_preset} {minimap_flags} \
-            --secondary=no -G 500k \
-            --junc-bed {input.junc} \
-            -t {threads} \
-            {input.index} {input.fastq} \
-            > {output.sam}
-            """
-
-    rule sam_to_cram:
-        input:
-            out_folder + "{sample}/alignment/{sample}.aligned.sam"
-        output:
-            cram = output_cram,
-            crai = output_cram + ".crai"
-        threads: 8
-        shell:
-            """
-            samtools sort -@ {threads} -m 2G -O bam {input} | \
-            samtools view -@ {threads} -C -T {genome} -o {output.cram} -
-            samtools index {output.cram}
-            """
-
-
-if prep == "pacbio":
-
-    # the minimap2 .mmi is reused as the pbmm2 index
-    rule pacbio_alignment:
-        input:
-            index = mmi,
-            flnc  = lambda wc: pacbio_flnc(wc.sample)
-        output:
-            cram = output_cram,
-            crai = output_cram + ".crai"
-        threads: 8
-        shell:
-            """
-            pbmm2 align --sort -j {threads} --sort-threads 4 -m 3G \
-            --preset=ISOSEQ --log-level INFO --unmapped \
-            {input.index} {input.flnc} | \
-            samtools calmd -b - {genome} | \
-            samtools view -C -T {genome} -o {output.cram} -
-            samtools index {output.cram}
-            """
-
-
-# alignments are stored as cram, so QC tools that cannot read cram get a temporary bam
+# temporary bam for the QC tools that cannot read cram
 rule cram_to_qc_bam:
     input:
         cram = output_cram,
@@ -181,9 +110,6 @@ rule cram_to_qc_bam:
         samtools index {output.bam}
         """
 
-#####
-## QC metrics
-#####
 
 rule samtools_qc:
     input:
@@ -218,17 +144,14 @@ rule rnaseqc:
         """
 
 
-# fastqc is deliberately not run, its length binning is misleading on long reads.
-# NanoStat covers the same read-level metrics
 rule nanostat_raw:
     input:
-        reads = raw_reads
+        reads = raw_fastq
     output:
         out_folder + "{sample}/qc/{sample}.nanostat.raw.tsv"
     threads: 4
-    run:
-        flag = "--ubam" if prep == "pacbio" else "--fastq"
-        shell("NanoStat %s {input.reads} --tsv -t {threads} > {output}" % flag)
+    shell:
+        "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
 
 
 rule nanostat_aligned:
@@ -242,22 +165,30 @@ rule nanostat_aligned:
         "NanoStat --bam {input.bam} --tsv -t {threads} > {output}"
 
 
-rule collate_nanostat:
+rule rrna_intervals:
     input:
-        expand(out_folder + "{sample}/qc/{sample}.nanostat.raw.tsv",     sample=samples),
-        expand(out_folder + "{sample}/qc/{sample}.nanostat.aligned.tsv", sample=samples)
+        gtf    = ref_gtf,
+        genome = genome
     output:
-        out_folder + data_code + "_nanostat_collated.tsv"
+        rrna
     params:
-        script = "scripts/collate_nanostat.py"
+        bed  = out_folder + data_code + ".rRNA.bed",
+        dict = out_folder + data_code + ".genome.dict"
     shell:
-        "python {params.script} --inFolder {out_folder} -o {output}"
+        """
+        ml picard
+        awk -F'\\t' -v OFS='\\t' '$3 == "gene" && $9 ~ /gene_type "(rRNA|rRNA_pseudogene|Mt_rRNA)"/ {{ match($9, /gene_id "[^"]+"/); print $1, $4 - 1, $5, substr($9, RSTART + 9, RLENGTH - 10), 0, $7 }}' {input.gtf} > {params.bed}
+        java -jar $PICARD CreateSequenceDictionary R={input.genome} O={params.dict}
+        java -jar $PICARD BedToIntervalList I={params.bed} O={output} SD={params.dict}
+        rm -f {params.bed} {params.dict}
+        """
 
 
 rule picard:
     input:
         bam    = qc_bam,
-        reflat = reflat_file
+        reflat = config['reflat_file'],
+        rrna   = rrna
     output:
         out_folder + "{sample}/qc/{sample}.RNASeqMetrics"
     shell:
@@ -267,7 +198,7 @@ rule picard:
         I={input.bam} O={output} \
         REF_FLAT={input.reflat} \
         STRAND=FIRST_READ_TRANSCRIPTION_STRAND \
-        RIBOSOMAL_INTERVALS={rrna} \
+        RIBOSOMAL_INTERVALS={input.rrna} \
         VALIDATION_STRINGENCY=LENIENT
         """
 
@@ -276,63 +207,52 @@ rule read_lengths:
     input:
         qc_bam
     output:
-        mapped   = out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt",
-        unmapped = out_folder + "{sample}/qc/{sample}.unmapped.readlengths.txt"
+        out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt"
     shell:
         """
         ml samtools
         ml bioawk
-        samtools view -F 4 {input} | bioawk -c sam '{{print length($seq)}}' > {output.mapped}
-        samtools view -f 4 {input} | bioawk -c sam '{{print length($seq)}}' > {output.unmapped}
+        samtools view -F 4 {input} | bioawk -c sam '{{print length($seq)}}' > {output}
         """
 
 
-# the script searches --inFolder recursively, so it takes out_folder rather than the launch dir
-rule collate_lengths:
+rule longread_qc_tables:
     input:
-        expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample=samples)
+        lengths = expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample=samples),
+        raw     = expand(out_folder + "{sample}/qc/{sample}.nanostat.raw.tsv",       sample=samples),
+        aligned = expand(out_folder + "{sample}/qc/{sample}.nanostat.aligned.tsv",   sample=samples),
+        pyc     = pychopper_stats
     output:
-        out_folder + data_code + "_read_lengths_collated.tsv.gz"
-    params:
-        script = "scripts/collate_read_lengths.R"
+        hist    = out_folder + data_code + "_read_length_hist.tsv.gz",
+        summary = out_folder + data_code + "_longread_qc_summary.tsv"
     shell:
         """
-        conda activate bambu_env
-        Rscript {params.script} --inFolder {out_folder} -o {output}
+        python scripts/longread_qc_tables.py \
+        --metadata {config[metadata]} \
+        --read-lengths {input.lengths} \
+        --nanostat-raw {input.raw} \
+        --nanostat-aligned {input.aligned} \
+        --pychopper {input.pyc} \
+        --hist-out {output.hist} \
+        --summary-out {output.summary}
         """
 
 
-# multiqc has no NanoStat module, so the collated table is written as custom content
-# (any *_mqc.tsv is picked up generically). this adds read-level stats to the
-# alignment-level metrics the modules already cover
-rule nanostat_mqc:
-    input:
-        out_folder + data_code + "_nanostat_collated.tsv"
-    output:
-        raw     = out_folder + "nanostat_raw_mqc.tsv",
-        aligned = out_folder + "nanostat_aligned_mqc.tsv"
-    params:
-        script = "scripts/nanostat_mqc.py",
-        prefix = out_folder + "nanostat"
-    shell:
-        "python {params.script} -i {input} -o {params.prefix}"
-
-
+# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset"
 rule multiQC:
     input:
         expand(out_folder + "{sample}/qc/{sample}.RNASeqMetrics", sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.metrics.tsv",   sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.flagstat.txt",  sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.idxstat.txt",   sample=samples),
-        nanostat_raw     = out_folder + "nanostat_raw_mqc.tsv",
-        nanostat_aligned = out_folder + "nanostat_aligned_mqc.tsv"
+        pychopper_stats
     output:
         out_folder + "multiqc/multiqc_report.html"
     params:
-        multiqc = "/sc/arion/projects/als-omics/conda/envs/snakemake/bin/multiqc"
+        multiqc = "/sc/arion/projects/als-omics/conda/envs/multiqc/bin/multiqc"
     shell:
         """
         export LC_ALL=en_US.UTF-8
         export LANG=en_US.UTF-8
-        {params.multiqc} -f --outdir {out_folder}multiqc/ {out_folder}
+        {params.multiqc} -f -e nanostat --outdir {out_folder}multiqc/ {out_folder}
         """

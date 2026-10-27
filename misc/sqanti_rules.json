@@ -1,0 +1,14 @@
+{
+    "full-splice_match": [
+        {
+            "perc_A_downstream_TTS": [0, 59]
+        }
+    ],
+    "rest": [
+        {
+            "perc_A_downstream_TTS": [0, 59],
+            "all_canonical": "canonical",
+            "min_sample_cov": 2
+        }
+    ]
+}

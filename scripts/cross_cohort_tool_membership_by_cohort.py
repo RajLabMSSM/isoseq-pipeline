@@ -1,17 +1,6 @@
 #!/usr/bin/env python3
-"""Expand the cross-cohort novel provenance into a per-cohort per-tool membership matrix.
-
-For each final XNOVEL isoform, resolve its src_ids (cohort:NOVEL_id) back to each
-contributing cohort's novel_provenance.tsv and emit one 0/1 column per (cohort, tool).
-A cohort/tool is 1 if ANY of that XNOVEL's src isoforms from that cohort had the tool.
-
-Usage:
-  cross_cohort_tool_membership_by_cohort.py \
-      --cross-provenance cross_cohort_novel_provenance.tsv \
-      --cohort tdpkd=.../tdpkd_nanopore_novel_provenance.tsv \
-      --cohort sun=.../sun_..._novel_provenance.tsv \
-      -o cross_cohort_tool_membership_by_cohort.tsv
-"""
+"""Per cross-cohort novel isoform, one 0/1 column per cohort x tool: 1 when any of its members from
+that cohort was built by that tool (from the cohort's novel_provenance.tsv)."""
 import argparse
 
 TOOLS = ["bambu", "isoquant", "stringtie"]
@@ -30,7 +19,7 @@ def load_cohort(path):
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cross-provenance", required=True)
     ap.add_argument("--cohort", action="append", required=True, metavar="NAME=PATH")
     ap.add_argument("-o", "--output", required=True)

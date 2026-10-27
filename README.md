@@ -1,129 +1,61 @@
-Long-read isoform discovery pipeline. Assembles a transcriptome from ONT or PacBio reads with three
-assemblers, takes the end-aware union of what they find, filters it with SQANTI3, and emits a
-reference plus novel annotation for downstream quantification.
+# isoseq-pipeline
 
-See links to instruction sections below:
+Builds the long-read isoform atlas (`isoforms_v9`): per-cohort isoform discovery from ONT cDNA reads,
+then one cross-cohort union with GENCODE.
 
-- [How to make a metadata sheet](#how-to-make-a-metadata-sheet)
-- [How to run the pipeline](#how-to-run-the-pipeline)
-- [What the pipeline does](#what-the-pipeline-does)
-- [Outputs](#outputs)
-- [Combining cohorts](#combining-cohorts)
+## Run
 
-The only things you should need to edit are the config yaml and the metadata sheet. The pipeline code
-lives here once; a cohort directory holds only its config, metadata and logs.
-
-### How to make a metadata sheet
-
-A tab separated `.tsv` (or `.xlsx`). The necessary columns are
-
-`sample` `long_read_fastq`
-
-and, if you are running StringTie in hybrid mode or IsoQuant with short-read correction,
-
-`short_read_bam_path`
-
-#### What to put in each column
-
-`sample` - the name you want the sample to have. No spaces, don't start with a number. The group a
-sample belongs to is taken from the **prefix** of this name, so `TDP_1` and `TDP_2` both land in group
-`TDP`. The groups themselves are listed in the config.
-
-`long_read_fastq` - full path to the sample's long reads. Gzipped is fine.
-
-`short_read_bam_path` - full path to the matching short-read BAM. Leave as `NA` if the sample has none;
-samples without one are skipped when the short-read BAMs are pooled.
-
-For PacBio, supply `flnc_bam_path` instead of `long_read_fastq`, or `subreads_xml` if you are starting
-from subreads and want the pipeline to run ccs itself.
-
-sample | long_read_fastq | short_read_bam_path
--- | -- | --
-GFP_1 | /path/to/GFP_1.fastq.gz | /path/to/GFP_1.bam
-GFP_2 | /path/to/GFP_2.fastq.gz | /path/to/GFP_2.bam
-TDP_1 | /path/to/TDP_1.fastq.gz | /path/to/TDP_1.bam
-TDP_2 | /path/to/TDP_2.fastq.gz | /path/to/TDP_2.bam
-
-### How to run the pipeline
-
-Run from the cohort's own directory, pointing at the Snakefile here. `run_code` in the config names the
-output folder, so bumping it starts a clean run without touching the previous one.
-
-**Dry run first.**
+Each cohort folder (`cohorts/<cohort>/isoseq-pipeline/`) holds its config, metadata and logs; the code
+lives here. `run_code` in the config names the output folder.
 
 ```
-sh ~/bin/snakejob -n -s Snakefile -c <cohort>_config.yaml -a acc_als-omics
+cd cohorts/tdpkd/isoseq-pipeline
+sh ~/bin/snakejob -n -s ../../../pipelines/isoseq-pipeline/Snakefile -c tdp_nanopore_config.yaml   # dry run
+snakejob_HPC -s ../../../pipelines/isoseq-pipeline/Snakefile -c tdp_nanopore_config.yaml           # submit
 ```
 
-**Submit to the cluster.**
+`snakejob_HPC -n` submits; dry runs go through `snakejob -n`. Then the cross-cohort union:
 
 ```
-snakejob_HPC -s Snakefile -c <cohort>_config.yaml
-```
-
-Add `-r` to resume. This passes `--rerun-triggers mtime` to snakemake, so completed upstream stages are
-compared on timestamps only and are not redone because a rule's text changed.
-
-**NB: `snakejob_HPC -n` does not dry run, it submits.** The `-n` is swallowed by the wrapper. Use the
-inner `snakejob` as above, which runs snakemake locally with no `--cluster` and so cannot submit.
-
-#### Minimal dependencies
-
-Conda environments, all expected to exist already: `isoseq-pipeline` (the default, set by
-`shell.prefix`), `bambu_env`, `isoquant313`, `sqanti3_v6`, `pychopper_env`. StringTie, gffcompare and
-minimap2 are called by absolute path.
-
-### What the pipeline does
-
-1. Orient and trim full-length cDNA reads with pychopper (ONT cDNA only)
-2. Build a combined `--junc-bed` from the annotation and the short-read STAR junctions
-3. Align with minimap2, or pbmm2 for PacBio, and store alignments as CRAM
-4. QC with samtools, RNA-SeQC, Picard and NanoStat, collected into one MultiQC report
-5. Pool each group's alignments into a single BAM, the shared input to all three assemblers
-6. Discover isoforms per group with Bambu, IsoQuant and StringTie3
-7. Take the end-aware union of the three, keeping alternative polyA isoforms distinct
-8. Filter the novel isoforms with SQANTI3 QC and the rules filter
-9. Emit the reference plus the surviving novel isoforms, as GTF and transcript FASTA
-
-Assembly is per group rather than per sample, so a lowly expressed isoform seen once in several samples
-is still assembled. Steps 7 and 8 split the work deliberately: the union errs towards keeping things,
-and SQANTI is the only precision filter.
-
-### Outputs
-
-Everything lands in `<out_folder>/<run_code>/`. The files you are likely to want:
-
-file | what
--- | --
-`consensus/<data_code>.isoforms.gtf.gz` | the reference plus novel annotation
-`consensus/<data_code>.isoforms.fa.gz` | matching transcript fasta
-`consensus/<data_code>_tracking_numbers.tsv` | the funnel, raw per tool through to final novel
-`consensus/<data_code>_novel_provenance.tsv` | which tools support each novel isoform
-`consensus/<data_code>_tool_overlap.tsv` | overlap between the three assemblers
-`consensus/<data_code>_sanity_genes.tsv` | are the expected genes present, and how many novel isoforms landed on them
-`consensus/<data_code>_sanity_genes.tsv.events.tsv` | per known cryptic event, is it in the final gtf and if not which stage dropped it
-`consensus/<data_code>_longread_specific.tsv` | novel isoforms carrying an intron absent from the short-read junctions
-`multiqc/multiqc_report.html` | QC across all samples
-
-Counting novel isoforms alone is not a valid recovery test, since an event already annotated in the
-reference is scored as zero novel. Use the events table for that.
-
-### Combining cohorts
-
-Once every cohort has finished, `cross_cohort/` merges them into one annotation with the same collapse
-tolerances used within a cohort.
-
-```
-cd cross_cohort
-sh ~/bin/snakejob -n -s Snakefile -c cross_cohort_config.yaml -a acc_als-omics
+cd pipelines/isoseq-pipeline/cross_cohort
 snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
 ```
 
-The collapse settings in `cross_cohort_config.yaml` must match the per-cohort config. If they disagree,
-the cross-cohort key is stricter than the within-cohort one and a single isoform is split across
-several entries.
+`build_reference.sh` launches both cohorts and chains the union behind them (`-x`: union only).
 
-Three of its outputs are not named after the run and are overwritten in place:
-`cross_cohort_novel_provenance.tsv`, `cross_cohort_global_provenance.tsv` and
-`tracking_numbers_final_numbers.tsv`. Back them up before re-running if you want to keep the previous
-versions.
+Metadata columns: `sample`, `condition`, `long_read_fastq`, `short_read_bam_path`. Groups are
+sample-name prefixes (`TDP_1` -> `TDP`).
+
+## Steps (v9)
+
+1. pychopper 2.7.10 (`-m edlib`; kit PCS109 tdpkd, PCS111 sun), polyA kept
+2. minimap2 2.31 `-ax splice -ub -k14` (tdpkd) / `-ax splice:hq -ub` (sun), `--secondary=no -G 500k`,
+   `--junc-bed` = GENCODE v50 junctions + the cohort's STAR junctions (>= 2 unique reads, canonical).
+   tdpkd drops two short-read libraries via `exclude_samples`, here and in the SQANTI junction coverage:
+   TDP-5 (aberrant differentiation) and CTRL-4 (low-depth outlier). The published v9 build (2026-09-21)
+   dropped them from the SQANTI coverage only; its tdpkd junc-bed used all 12 STAR libraries (508,354
+   short-read junctions, vs 500,324 with the two dropped)
+3. Per group, on the pooled long-read BAM:
+   - StringTie 3.0.3 `--mix -G` (short-read BAM first; no `-t`)
+   - IsoQuant 3.13.0 `default_ont`, `--illumina_bam`, `--clean_start`, `--read_group file_name`
+   - Bambu 3.12.1, NDR 0.7
+4. Union of tool x group models; models in GENCODE (`=`, `c`), single-exon and unstranded models
+   dropped; `tama_merge -m 6 -z 100 -e common_ends -d merge_dup`, one `no_cap` source per tool and
+   group (no tool vote); gffcompare 0.12.10 for class codes
+5. SQANTI3 6.0.1 QC with the cohort's `SJ.out.tab`, CAGE peaks and polyA motifs; `sqanti3_filter.py
+   rules -e` with `misc/sqanti_rules.json`
+6. GENCODE v50 plus the passed novels (`NOVEL_*`, gene from SQANTI's `associated_gene`), GTF + FASTA
+7. Cross-cohort: the cohorts' novels merged by `tama_merge` at the same tolerances, single-exon
+   dropped, gene ids set by `cross_cohort_novel_genes.py` (`XNOVEL_*`, `XNOVELG_*` loci)
+
+QC: NanoStat, samtools, RNA-SeQC, Picard into MultiQC 1.25.1, plus `<data_code>_longread_qc_summary.tsv`
+and `<data_code>_read_length_hist.tsv.gz`.
+
+Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, `bambu_env`,
+`isoquant313`, `sqanti3_v6`, `tama_env` (Python 2), `multiqc`.
+
+## Outputs
+
+`results/<run_code>/consensus/`: `<data_code>.isoforms.{gtf,fa}.gz`, `_novel_provenance.tsv`,
+`_tool_overlap.tsv`, `_tracking_numbers.tsv` (the funnel), `_sanity_genes.tsv{,.events.tsv}` (the STMN2
+and UNC13A cryptic exons traced stage by stage). Cross-cohort: `references/novel_isoform_references/v9/`.

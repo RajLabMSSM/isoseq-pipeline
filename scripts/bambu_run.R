@@ -1,71 +1,21 @@
-library(rtracklayer)
-library(Biostrings)
 library(optparse)
-
-#options(BIOCONDUCTOR_ONLINE_VERSION_DIAGNOSIS = FALSE)
 options(BIOCONDUCTOR_CONFIG_FILE = "/sc/arion/projects/ad-omics/data/software/bambu/config.yaml")
 
-option_list <- list(
-    make_option(c('--anno', '-a' ), help='the annotation RData file produced by bambu', default = ""),
-    make_option(c('--prefix', '-p'), help = "the prefix to the output files", default = ""),
-    make_option(c('--fasta', '-f'), help = "the genome build", default = ""),
-    make_option(c('--cores', '-c'), help = "the number of cores", default = 1),
-    # NDR = Novel Discovery Rate threshold (0-1). Default NULL lets bambu auto-recommend
-    # based on annotation completeness (current behaviour). HIGHER NDR (towards 1.0) =
-    # MORE sensitive = more novel transcripts kept -> better recall of rare isoforms for
-    # Join & Call discovery (Chen et al. 2023). Set e.g. --NDR 0.5 when you want to tune.
-    make_option(c('--NDR', '-n'), help = "bambu NDR threshold 0-1 (default NULL = auto)", default = NULL)
-)
-
-option.parser <- OptionParser(option_list=option_list)
-# allow for unlimited positional arguments
-arguments <- parse_args(option.parser,positional_arguments = TRUE)
-
-bam_files <- arguments$args
-
+arguments <- parse_args(OptionParser(option_list = list(
+    make_option(c("--anno", "-a"), default = ""),
+    make_option(c("--prefix", "-p"), default = ""),
+    make_option(c("--fasta", "-f"), default = ""),
+    make_option(c("--cores", "-c"), default = 1),
+    make_option(c("--NDR", "-n"), default = NULL)
+)), positional_arguments = TRUE)
 opt <- arguments$opt
 
-anno <- opt$anno
-prefix <- opt$prefix
-fasta <- opt$fasta
-cores <- as.numeric(opt$cores)
-# NDR: NULL -> bambu auto-recommends; otherwise use the supplied numeric threshold
-ndr <- if (is.null(opt$NDR)) NULL else as.numeric(opt$NDR)
-
-message(" * genome: ", fasta )
-
-message(" * processing the following BAM files:" )
-
-message(bam_files)
-
-message(" * running bambu with ", cores, " cores" )
-
-load(anno)
-
-#suppressPackageStartupMessages(
-library(bambu)#)
-
-# FaFile, not a path string: a string genome makes bambu call available.genomes() (needs BiocManager/net)
-genome <- Rsamtools::FaFile(fasta)
-
-# run bambu
-# Join & Call: all bam_files are passed together so discovery is joint across the
-# group's replicates. NDR defaults to NULL (bambu auto-recommends); pass --NDR to tune.
-res <- bambu(
-    reads = bam_files,
-    annotations = anno,
-    genome = genome,
-    #stranded = FALSE,
-    NDR = ndr,
-    ncore = cores
-    #rcOutDir = dirname(prefix)
-    #lowMemory = TRUE
-    )
-
-# save GTF and counts
-writeBambuOutput(se = res, path = dirname(prefix), prefix = paste0(basename(prefix), "_" ) )
-
-# save bambu object
-
-save( res, file = paste0(prefix, "_bambu.RData") )
-
+library(bambu)
+load(opt$anno)
+# a FaFile, not a path: a path string makes bambu query BiocManager over the network
+genome <- Rsamtools::FaFile(opt$fasta)
+# all of the group's bams together: joint discovery
+res <- bambu(reads = arguments$args, annotations = anno, genome = genome,
+             NDR = as.numeric(opt$NDR), ncore = as.numeric(opt$cores))
+writeBambuOutput(se = res, path = dirname(opt$prefix), prefix = paste0(basename(opt$prefix), "_"))
+save(res, file = paste0(opt$prefix, "_bambu.RData"))

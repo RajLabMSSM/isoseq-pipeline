@@ -1,30 +1,22 @@
-# Cross-cohort combine. this spans every cohort, so it is a separate workflow from the
-# per-cohort Snakefile. run it once each cohort's own pipeline has finished
-#
-#   cd pipelines/isoseq-pipeline/cross_cohort
-#   snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
+# run after every cohort's own pipeline: snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
+import os
 
 configfile: "cross_cohort_config.yaml"
 
-SCRIPTS  = "/sc/arion/projects/als-omics/brooke-phd-thesis/pipelines/isoseq-pipeline/scripts"
-FASTA_SH = "/sc/arion/projects/als-omics/brooke-phd-thesis/pipelines/salmon-pipeline/scripts/make_transcriptome_fasta.sh"
-PYTHON   = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
+SCRIPTS    = os.path.join(os.path.dirname(workflow.basedir), "scripts")
+FASTA_SH   = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), "salmon-pipeline/scripts/make_transcriptome_fasta.sh")
+PYTHON     = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
+TAMA       = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
+PYTHON2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"
+GFFCOMPARE = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"
 
 OUT     = config["output_dir"]
 NAME    = config["output_name"]
-GENOME  = config["genome_fasta"]
-IGN_TSS = config.get("ignore_tss_multiexon", True)
+cohorts = config["cohorts"]
+cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohorts.items())
+cohort_prov = {k: v.replace(".isoforms.gtf.gz", "_novel_provenance.tsv") for k, v in cohorts.items()}
+cohort_tracking = {k: v.replace(".isoforms.gtf.gz", "_tracking_numbers.tsv") for k, v in cohorts.items()}
 
-cohort_args = " ".join("--cohort %s=%s" % (k, v) for k, v in config["cohorts"].items())
-cohort_prov_args = " ".join("--cohort-provenance %s=%s" % (k, v)
-                            for k, v in config["cohort_provenance"].items())
-# the membership script takes the same files under a different flag name
-cohort_member_args = " ".join("--cohort %s=%s" % (k, v)
-                              for k, v in config["cohort_provenance"].items())
-
-######
-## Main pipeline definition
-######
 
 rule all:
     input:
@@ -32,92 +24,115 @@ rule all:
         OUT + NAME + ".fa.gz",
         OUT + "cross_cohort_novel_provenance.tsv",
         OUT + "tracking_numbers_final_numbers.tsv",
-        OUT + "cross_cohort_global_provenance.tsv",
-        OUT + "cross_cohort_tool_membership_by_cohort.tsv"
+        OUT + "cross_cohort_tool_membership_by_cohort.tsv",
+        OUT + "tracking_numbers.done"
 
 
-# union of the per-cohort novels, collapsed end-aware with the same tolerances as the
-# within-cohort consensus, then the reference appended verbatim. the collapse settings
-# must match the per-cohort config or one isoform is split across several entries
+# the cohorts' SQANTI-passed novels merged at the within-cohort tolerances, then GENCODE appended
 rule cross_cohort_union:
     input:
         ref     = config["reference"],
-        cohorts = list(config["cohorts"].values())
+        cohorts = list(cohorts.values())
     output:
-        gtf     = OUT + NAME + ".gtf.gz",
-        prov    = OUT + "cross_cohort_novel_provenance.tsv",
+        gtf     = temp(OUT + NAME + ".union.gtf"),
+        prov    = temp(OUT + "cross_cohort_union_provenance.tsv"),
         summary = OUT + "tracking_numbers_final_numbers.tsv"
     params:
-        plain       = OUT + NAME + ".gtf",
-        cohort_args = cohort_args,
-        source      = config["novel_source"],
-        wobble      = config["wobble"],
-        tss         = config["tss_tol"],
-        tes         = config["tes_tol"],
-        ign_tss     = "--ignore-tss-multiexon" if IGN_TSS else "",
-        prefix      = config["prefix"]
+        workdir = OUT + "tama_tmp"
     shell:
         """
         {PYTHON} {SCRIPTS}/cross_cohort_novel_union.py \
         --reference {input.ref} \
-        {params.cohort_args} \
-        --novel-source {params.source} \
-        --wobble {params.wobble} \
-        --tss-tol {params.tss} \
-        --tes-tol {params.tes} {params.ign_tss} \
-        --prefix {params.prefix} \
+        {cohort_args} \
+        --novel-source ONT \
+        --wobble {config[wobble]} \
+        --tes-tol {config[tes_tol]} \
+        --ends common_ends \
+        --tama-merge {TAMA} \
+        --python2 {PYTHON2} \
+        --workdir {params.workdir} \
+        --prefix XNOVEL \
         --provenance-out {output.prov} \
         --summary-out {output.summary} \
-        -o {params.plain}
-        gzip -nf {params.plain}
+        -o {output.gtf}
+        rm -rf {params.workdir}
         """
 
 
-# emitted here so one run produces the whole reference: gtf, fasta and provenance
+rule decompress_reference:
+    input:
+        config["reference"]
+    output:
+        temp(OUT + "reference.gtf")
+    shell:
+        "gunzip -c {input} > {output}"
+
+
+rule cross_cohort_genes:
+    input:
+        gtf     = OUT + NAME + ".union.gtf",
+        prov    = OUT + "cross_cohort_union_provenance.tsv",
+        ref     = OUT + "reference.gtf",
+        cohorts = list(cohorts.values())
+    output:
+        gtf  = OUT + NAME + ".gtf.gz",
+        prov = OUT + "cross_cohort_novel_provenance.tsv"
+    params:
+        plain   = OUT + NAME + ".gtf",
+        workdir = OUT + "loci_tmp"
+    shell:
+        """
+        {PYTHON} {SCRIPTS}/cross_cohort_novel_genes.py \
+        --gtf {input.gtf} \
+        --provenance {input.prov} \
+        {cohort_args} \
+        --reference {input.ref} \
+        --gffcompare {GFFCOMPARE} \
+        --workdir {params.workdir} \
+        --novel-source ONT \
+        --prefix XNOVEL \
+        --provenance-out {output.prov} \
+        -o {params.plain}
+        gzip -nf {params.plain}
+        rm -rf {params.workdir}
+        """
+
+
 rule cross_cohort_fasta:
     input:
         gtf = OUT + NAME + ".gtf.gz"
     output:
         fa = OUT + NAME + ".fa.gz"
-    params:
-        genome = GENOME,
-        script = FASTA_SH
     shell:
-        "bash {params.script} {input.gtf} {params.genome} {output.fa}"
+        "bash {FASTA_SH} {input.gtf} {config[genome_fasta]} {output.fa}"
 
 
-# pools per-tool support across the cohorts that contributed each cross-cohort isoform
-rule cross_cohort_global_provenance:
-    input:
-        cross       = OUT + "cross_cohort_novel_provenance.tsv",
-        cohort_prov = list(config["cohort_provenance"].values())
-    output:
-        OUT + "cross_cohort_global_provenance.tsv"
-    params:
-        cohort_prov_args = cohort_prov_args
-    shell:
-        """
-        {PYTHON} {SCRIPTS}/cross_cohort_global_provenance.py \
-        --cross-provenance {input.cross} {params.cohort_prov_args} \
-        -o {output}
-        """
-
-
-# per-cohort per-tool membership for every cross-cohort isoform. produced on every build, not by
-# hand, because XNOVEL ids are renumbered between vintages: a membership file from another build
-# shares enough ids with this one to merge cleanly and be wrong in every row. the reader guards on
-# id-set equality, and that guard only helps if a matching file actually exists
+# rebuilt every time: XNOVEL ids are renumbered between builds
 rule cross_cohort_tool_membership:
     input:
         cross       = OUT + "cross_cohort_novel_provenance.tsv",
-        cohort_prov = list(config["cohort_provenance"].values())
+        cohort_prov = list(cohort_prov.values())
     output:
         OUT + "cross_cohort_tool_membership_by_cohort.tsv"
     params:
-        cohort_args = cohort_member_args
+        cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohort_prov.items())
     shell:
         """
         {PYTHON} {SCRIPTS}/cross_cohort_tool_membership_by_cohort.py \
         --cross-provenance {input.cross} {params.cohort_args} \
         -o {output}
+        """
+
+
+rule upsert_tracking:
+    input:
+        union  = OUT + "tracking_numbers_final_numbers.tsv",
+        cohort = list(cohort_tracking.values())
+    output:
+        done = touch(OUT + "tracking_numbers.done")
+    params:
+        cohort = " ".join("%s=%s" % kv for kv in cohort_tracking.items())
+    shell:
+        """
+        {PYTHON} {SCRIPTS}/upsert_tracking_numbers.py {config[tracking_numbers]} {config[run_code]} {input.union} {params.cohort}
         """

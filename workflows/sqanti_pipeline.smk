@@ -1,80 +1,87 @@
-# SQANTI3 6.0.1 QC and rules filter, applied to the novel consensus isoforms only
-# this is the precision filter for the catalogue. surviving ids feed reference_with_novel
-# QC runs in the sqanti3_v6 env, the filter script needs R from bambu_env
+import glob
+import os
 
-sqanti_threads = 12
+sqanti_rules = os.path.join(workflow.basedir, "misc", "sqanti_rules.json")
+# STAR junctions for SQANTI's short-read junction coverage. exclude_samples are dropped (tdpkd: TDP-5
+# aberrant differentiation, CTRL-4 low-depth outlier); the published v9 build dropped them here too.
+sqanti_sj =[f for f in sorted(glob.glob(os.path.join(junction_folder, "*.SJ.out.tab")))
+             if os.path.basename(f).split(".")[0] not in excluded_samples]
 
 
-# drop transfrags that already match the reference, keeping the original TCONS ids so
-# the surviving ids map straight back onto merged_consensus
+# keeps the merged ids so SQANTI's pass list maps straight back onto merged_consensus
 rule novel_consensus_gtf:
     input:
-        merged = out_folder + "consensus/" + data_code + "_merged_consensus.gtf",
+        merged = cons + "_merged_consensus.gtf",
         ref    = ref_gtf
     output:
         gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf"
-    params:
-        exclude = config.get("novel_exclude_codes", "=,c"),
-        script  = "scripts/build_reference_with_novel.py",
-        python  = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
     shell:
         """
-        {params.python} {params.script} \
+        python scripts/build_reference_with_novel.py \
         --merged {input.merged} \
         --reference {input.ref} \
-        --exclude-codes '{params.exclude}' \
+        --exclude-codes '=,c' \
         --novel-only --no-rename \
         -o {output.gtf}
         """
 
 
-# no short reads are supplied, so this is a sequence-only run
-# both genePreds are removed first, sqanti reuses a stale one otherwise
+# -c gives every junction its short-read support (min_sample_cov) for the rules filter.
+# the genePreds are removed first, sqanti reuses a stale one otherwise
 rule sqanti_qc:
     input:
         gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf",
         ref = ref_gtf,
-        fa  = referenceFa
+        fa  = genome,
+        sj  = sqanti_sj
     output:
         classification = out_folder + "sqanti/" + data_code + "_classification.txt",
         corrected_gtf  = out_folder + "sqanti/" + data_code + "_corrected.gtf",
         corrected_fa   = out_folder + "sqanti/" + data_code + "_corrected.fasta"
     params:
         outdir = out_folder + "sqanti/",
-        prefix = data_code
-    threads: sqanti_threads
+        sj     = ",".join(sqanti_sj)
+    threads: 12
     shell:
         """
         conda activate sqanti3_v6
-        rm -f {params.outdir}{params.prefix}_corrected.genePred {params.outdir}refAnnotation_{params.prefix}.genePred
-        sqanti3_qc.py \
-        --isoforms {input.gtf} \
-        --refGTF {input.ref} \
-        --refFasta {input.fa} \
-        -d {params.outdir} \
-        -o {params.prefix} \
+        rm -f {params.outdir}{data_code}_corrected.genePred {params.outdir}refAnnotation_{data_code}.genePred
+        sqanti3_qc.py \\
+        --isoforms {input.gtf} \\
+        --refGTF {input.ref} \\
+        --refFasta {input.fa} \\
+        -c '{params.sj}' \\
+        --CAGE_peak {config[sqanti_cage_peak]} --polyA_motif_list {config[sqanti_polya_motifs]} \\
+        -d {params.outdir} \\
+        -o {data_code} \\
         -t {threads}
         """
 
 
+# rules: FSM intra-priming only; the rest also all-canonical + min_sample_cov >= 2. RTS_stage is left out, it drops the UNC13A CE
 rule sqanti_filter:
     input:
         classification = out_folder + "sqanti/" + data_code + "_classification.txt",
         fasta          = out_folder + "sqanti/" + data_code + "_corrected.fasta",
-        gff            = out_folder + "sqanti/" + data_code + "_corrected.gtf"
+        gtf            = out_folder + "sqanti/" + data_code + "_corrected.gtf"
     output:
-        gtf            = out_folder + "sqanti/" + data_code + "_filter_sqanti.cds.gtf",
-        classification = out_folder + "sqanti/" + data_code + "_filter_sqanti_classification.tsv",
-        fasta          = out_folder + "sqanti/" + data_code + "_filter_sqanti.fasta"
+        classification = out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
+        pass_ids       = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
+        gtf            = out_folder + "sqanti/" + data_code + ".filtered.gtf",
+        fasta          = out_folder + "sqanti/" + data_code + ".filtered.fasta"
     params:
-        script     = "scripts/filter_sqanti.R",
-        out_prefix = out_folder + "sqanti/" + data_code
+        outdir = out_folder + "sqanti/"
+    threads: 4
     shell:
         """
-        conda activate bambu_env
-        Rscript {params.script} \
-        --sqanti {input.classification} \
-        --fasta {input.fasta} \
-        --gff {input.gff} \
-        --output {params.out_prefix}
+        conda activate sqanti3_v6
+        sqanti3_filter.py rules \\
+        --sqanti_class {input.classification} \\
+        --filter_gtf {input.gtf} \\
+        --filter_isoforms {input.fasta} \\
+        -j {sqanti_rules} \\
+        -e \\
+        -d {params.outdir} \\
+        -o {data_code} \\
+        -c {threads}
         """

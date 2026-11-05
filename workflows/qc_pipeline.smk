@@ -66,8 +66,8 @@ rule pychopper:
         """
 
 
-# spliced alignment with minimap2 (Li 2018): the preset and flags come from the config (splice; -ub =
-# look for GT-AG splice signals on both strands). k is fixed when the .mmi index is built, so the index
+# spliced alignment with minimap2 (Li 2018): the preset comes from the config. splice already looks for
+# GT-AG splice signals on both strands (-ub). k is fixed when the .mmi index is built, so the index
 # decides it, not this line. --secondary=no writes no secondary alignments.
 # -G 500k widens the intron search to 500 kb, above the default 200 kb; it is not a hard limit, so some
 # introns come out longer. --junc-bed gives a bonus at the splice sites in the combined bed.
@@ -82,7 +82,7 @@ rule nanopore_alignment:
     shell:
         """
         {minimap2_bin} \
-        -ax {config[minimap_preset]} {config[minimap_flags]} \
+        -ax {config[minimap_preset]} \
         --secondary=no -G 500k \
         --junc-bed {input.junc} \
         -t {threads} \

@@ -1,4 +1,7 @@
-# --clean_start stops isoquant reusing another group's converted gene database
+# isoquant discovery on the pooled long-read bam of one group (Prjibelski et al. 2023). --illumina_bam
+# gives isoquant the group's short reads to confirm and correct splice junctions. --clean_start stops
+# isoquant reusing another group's converted gene database. after the run the converted gene
+# database (*.db) and the large per-read assignment table are deleted to save space
 rule run_isoquant:
     input:
         bams      = lambda wc: pooled_bam(wc.group),

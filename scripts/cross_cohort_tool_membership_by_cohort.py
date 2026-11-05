@@ -7,6 +7,7 @@ TOOLS = ["bambu", "isoquant", "stringtie"]
 
 
 def load_cohort(path):
+    # cohort provenance -> {transcript id: (bambu, isoquant, stringtie) 0/1}; NA or empty counts as 0
     d = {}
     with open(path) as fh:
         header = fh.readline().rstrip("\n").split("\t")
@@ -25,6 +26,7 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
+    # every cohort's tool flags, in the order the cohorts were given
     order = []
     per_cohort = {}
     for spec in args.cohort:
@@ -32,24 +34,26 @@ def main():
         order.append(name)
         per_cohort[name] = load_cohort(path)
 
+    # output columns: the cross-cohort ids, then <cohort>_<tool> for every cohort and tool
     cols = ["new_id", "gene_id", "class_code", "n_cohorts", "cohorts"]
     for c in order:
         cols += ["%s_%s" % (c, t) for t in TOOLS]
 
     with open(args.cross_provenance) as fh, open(args.output, "w") as out:
         out.write("\t".join(cols) + "\n")
-        h = fh.readline().rstrip("\n").split("\t")
-        idx = {c: i for i, c in enumerate(h)}
+        header = fh.readline().rstrip("\n").split("\t")
+        idx = {c: i for i, c in enumerate(header)}
         for line in fh:
             f = line.rstrip("\n").split("\t")
-            flags = {c: [0, 0, 0] for c in order}
+            # a tool flag of a cohort is 1 when any member from that cohort was built by the tool
+            flags = {c: [0] * len(TOOLS) for c in order}
             for src in f[idx["src_ids"]].split("|"):
                 if ":" not in src:
                     continue
-                coh, tid = src.split(":", 1)
-                if coh in per_cohort and tid in per_cohort[coh]:
-                    tv = per_cohort[coh][tid]
-                    flags[coh] = [a | b for a, b in zip(flags[coh], tv)]
+                cohort, tid = src.split(":", 1)
+                if cohort in per_cohort and tid in per_cohort[cohort]:
+                    member_flags = per_cohort[cohort][tid]
+                    flags[cohort] = [a | b for a, b in zip(flags[cohort], member_flags)]
             row = [f[idx["new_id"]], f[idx["gene_id"]], f[idx["class_code"]],
                    f[idx["n_cohorts"]], f[idx["cohorts"]]]
             for c in order:

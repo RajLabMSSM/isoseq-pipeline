@@ -3,8 +3,13 @@ import os
 
 configfile: "cross_cohort_config.yaml"
 
-SCRIPTS    = os.path.join(os.path.dirname(workflow.basedir), "scripts")
-FASTA_SH   = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), "salmon-pipeline/scripts/make_transcriptome_fasta.sh")
+# this Snakefile sits in isoseq-pipeline/cross_cohort/: the isoseq scripts are one folder up, and the
+# salmon-pipeline gffread wrapper sits next to isoseq-pipeline in pipelines/
+ISOSEQ_DIR    = os.path.dirname(workflow.basedir)
+PIPELINES_DIR = os.path.dirname(ISOSEQ_DIR)
+SCRIPTS    = os.path.join(ISOSEQ_DIR, "scripts")
+FASTA_SH   = os.path.join(PIPELINES_DIR, "salmon-pipeline/scripts/make_transcriptome_fasta.sh")
+# tools: the isoseq env python, tama_merge (python 2) and gffcompare
 PYTHON     = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
 TAMA       = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
 PYTHON2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"
@@ -13,7 +18,10 @@ GFFCOMPARE = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux
 OUT     = config["output_dir"]
 NAME    = config["output_name"]
 cohorts = config["cohorts"]
+# one --cohort name=gtf argument per cohort
 cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohorts.items())
+# each cohort pipeline writes its provenance and tracking tables next to its final gtf, under the
+# same prefix (<prefix>.isoforms.gtf.gz -> <prefix>_novel_provenance.tsv, <prefix>_tracking_numbers.tsv)
 cohort_prov = {k: v.replace(".isoforms.gtf.gz", "_novel_provenance.tsv") for k, v in cohorts.items()}
 cohort_tracking = {k: v.replace(".isoforms.gtf.gz", "_tracking_numbers.tsv") for k, v in cohorts.items()}
 
@@ -28,11 +36,15 @@ rule all:
         OUT + "tracking_numbers.done"
 
 
-# the cohorts' SQANTI-passed novels merged at the within-cohort tolerances, then GENCODE appended
+# the cohorts' SQANTI-passed novels merged with tama_merge (Kuo et al. 2020) at the within-cohort
+# tolerances (junctions +- wobble bp, 3' ends +- tes_tol bp, common ends), then GENCODE appended
 rule cross_cohort_union:
     input:
         ref     = config["reference"],
-        cohorts = list(cohorts.values())
+        cohorts = list(cohorts.values()),
+        # the script and the module it imports are inputs, so editing either rebuilds the union
+        script  = SCRIPTS + "/cross_cohort_novel_union.py",
+        helper  = SCRIPTS + "/consensus_tama.py"
     output:
         gtf     = temp(OUT + NAME + ".union.gtf"),
         prov    = temp(OUT + "cross_cohort_union_provenance.tsv"),
@@ -41,7 +53,7 @@ rule cross_cohort_union:
         workdir = OUT + "tama_tmp"
     shell:
         """
-        {PYTHON} {SCRIPTS}/cross_cohort_novel_union.py \
+        {PYTHON} {input.script} \
         --reference {input.ref} \
         {cohort_args} \
         --novel-source ONT \
@@ -59,6 +71,7 @@ rule cross_cohort_union:
         """
 
 
+# plain-text reference for gffcompare
 rule decompress_reference:
     input:
         config["reference"]
@@ -68,12 +81,15 @@ rule decompress_reference:
         "gunzip -c {input} > {output}"
 
 
+# gene assignment of the union's novel models (XNOVEL ids, novel loci) and the final gtf
 rule cross_cohort_genes:
     input:
         gtf     = OUT + NAME + ".union.gtf",
         prov    = OUT + "cross_cohort_union_provenance.tsv",
         ref     = OUT + "reference.gtf",
-        cohorts = list(cohorts.values())
+        cohorts = list(cohorts.values()),
+        # the script is an input, so editing it re-runs this step
+        script  = SCRIPTS + "/cross_cohort_novel_genes.py"
     output:
         gtf  = OUT + NAME + ".gtf.gz",
         prov = OUT + "cross_cohort_novel_provenance.tsv"
@@ -82,7 +98,7 @@ rule cross_cohort_genes:
         workdir = OUT + "loci_tmp"
     shell:
         """
-        {PYTHON} {SCRIPTS}/cross_cohort_novel_genes.py \
+        {PYTHON} {input.script} \
         --gtf {input.gtf} \
         --provenance {input.prov} \
         {cohort_args} \
@@ -98,41 +114,49 @@ rule cross_cohort_genes:
         """
 
 
+# transcript sequences of the final gtf, the salmon index input
 rule cross_cohort_fasta:
     input:
-        gtf = OUT + NAME + ".gtf.gz"
+        gtf = OUT + NAME + ".gtf.gz",
+        # the salmon-pipeline gffread wrapper is an input, so editing it rebuilds the fasta
+        script = FASTA_SH
     output:
         fa = OUT + NAME + ".fa.gz"
     shell:
-        "bash {FASTA_SH} {input.gtf} {config[genome_fasta]} {output.fa}"
+        "bash {input.script} {input.gtf} {config[genome_fasta]} {output.fa}"
 
 
 # rebuilt every time: XNOVEL ids are renumbered between builds
 rule cross_cohort_tool_membership:
     input:
         cross       = OUT + "cross_cohort_novel_provenance.tsv",
-        cohort_prov = list(cohort_prov.values())
+        cohort_prov = list(cohort_prov.values()),
+        # the script is an input, so editing it re-runs this step
+        script      = SCRIPTS + "/cross_cohort_tool_membership_by_cohort.py"
     output:
         OUT + "cross_cohort_tool_membership_by_cohort.tsv"
     params:
         cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohort_prov.items())
     shell:
         """
-        {PYTHON} {SCRIPTS}/cross_cohort_tool_membership_by_cohort.py \
+        {PYTHON} {input.script} \
         --cross-provenance {input.cross} {params.cohort_args} \
         -o {output}
         """
 
 
+# write this build's funnel numbers into the project tracking table
 rule upsert_tracking:
     input:
         union  = OUT + "tracking_numbers_final_numbers.tsv",
-        cohort = list(cohort_tracking.values())
+        cohort = list(cohort_tracking.values()),
+        # the script is an input, so editing it re-runs this step
+        script = SCRIPTS + "/upsert_tracking_numbers.py"
     output:
         done = touch(OUT + "tracking_numbers.done")
     params:
         cohort = " ".join("%s=%s" % kv for kv in cohort_tracking.items())
     shell:
         """
-        {PYTHON} {SCRIPTS}/upsert_tracking_numbers.py {config[tracking_numbers]} {config[run_code]} {input.union} {params.cohort}
+        {PYTHON} {input.script} {config[tracking_numbers]} {config[run_code]} {input.union} {params.cohort}
         """

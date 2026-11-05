@@ -11,14 +11,18 @@ from collections import Counter, defaultdict
 from itertools import combinations
 
 TOOLS = ["bambu", "isoquant", "stringtie"]
+# class code and reference id given to a model gffcompare did not report (treated as intergenic, no reference)
+UNMATCHED = ("u", "-")
 
 
 def attr(field, key):
+    # value of one gtf attribute (key "value";), or None when the key is missing
     m = re.search(key + r' "([^"]*)"', field)
     return m.group(1) if m else None
 
 
 def load_union(path):
+    # union gtf -> {union id: chrom, strand, sorted exons, source tool and group}
     tx = {}
     with open(path) as fh:
         for line in fh:
@@ -41,6 +45,7 @@ def load_union(path):
 
 
 def load_tmap(prefix):
+    # gffcompare .tmap -> {query id: (class code, reference id)}; header names first, fixed columns as fallback
     cc = {}
     for f in glob.glob(prefix + ".*.tmap"):
         with open(f) as fh:
@@ -55,6 +60,8 @@ def load_tmap(prefix):
 
 
 def write_bed12(path, uids, tx, name=lambda uid: uid):
+    # tama_merge input: bed12, 0-based start, sorted by chrom and start; the name field is
+    # "<gene>;<transcript>" (tama splits on ";", here the gene part is a dummy "g"), score 40, colour 0,0,0
     with open(path, "w") as out:
         for uid in sorted(uids, key=lambda u: (tx[u]["chrom"], tx[u]["exons"][0][0])):
             d = tx[uid]
@@ -67,6 +74,8 @@ def write_bed12(path, uids, tx, name=lambda uid: uid):
 
 
 def read_bed12(path):
+    # tama_merge output bed12 -> {merged model id: (chrom, strand, 1-based exons)}; the id is the part of the
+    # name field after ";"
     models = {}
     with open(path) as fh:
         for line in fh:
@@ -83,6 +92,8 @@ def read_bed12(path):
 
 
 def gtf_lines(mid, chrom, strand, exons, extra=""):
+    # one transcript line plus its exon lines; tama names models <gene>.<n>, so the gene id is the id
+    # minus its last ".<n>"
     ids = 'gene_id "%s"; transcript_id "%s";' % (mid.rsplit(".", 1)[0], mid)
     rows = [[chrom, "TAMA", "transcript", str(exons[0][0]), str(exons[-1][1]), ".", strand, ".", ids + extra]]
     rows += [[chrom, "TAMA", "exon", str(s), str(e), ".", strand, ".", ids] for s, e in exons]
@@ -110,7 +121,7 @@ def run_tama(python2, tama_merge, filelist, prefix, wobble, tes_tol, ends, n_inp
 
 
 def read_members(report):
-    # members are <source>_<union id>
+    # tama trans_report -> {merged model id: union ids merged into it}; members are <source>_<union id>
     members = {}
     with open(report) as fh:
         hdr = fh.readline().rstrip("\n").split("\t")
@@ -140,23 +151,30 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
+    # load the union models and their gffcompare class against the reference
     drop = set(c for c in args.exclude_codes.split(",") if c)
     tx = load_union(args.union)
     tmap = load_tmap(args.gffcmp_prefix)
 
-    candidates = [uid for uid in tx if tmap.get(uid, ("u", "-"))[0] not in drop]
+    # novel candidates = class not excluded; split into single-exon, unstranded and spliced stranded models
+    candidates = [uid for uid in tx if tmap.get(uid, UNMATCHED)[0] not in drop]
     mono = [uid for uid in candidates if len(tx[uid]["exons"]) == 1]
     # tama cannot place an unstranded model
     unstranded = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] not in ("+", "-")]
     novel = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] in ("+", "-")]
 
-    per_tool = [Counter(tx[u]["tool"] for u in ids) for ids in (tx, candidates, mono, unstranded)]
+    # per-tool counts at each step, for the stats table
+    raw_by_tool = Counter(tx[u]["tool"] for u in tx)
+    candidates_by_tool = Counter(tx[u]["tool"] for u in candidates)
+    mono_by_tool = Counter(tx[u]["tool"] for u in mono)
+    unstranded_by_tool = Counter(tx[u]["tool"] for u in unstranded)
     with open(args.stats_out, "w") as sf:
         sf.write("tool\traw_all\tnovel_candidates\tmonoexon_dropped\tunstranded_dropped\n")
         for t in TOOLS:
-            sf.write("%s\t%d\t%d\t%d\t%d\n" % ((t,) + tuple(c[t] for c in per_tool)))
+            sf.write("%s\t%d\t%d\t%d\t%d\n" % (t, raw_by_tool[t], candidates_by_tool[t],
+                                                  mono_by_tool[t], unstranded_by_tool[t]))
 
-    # source names carry no underscore, tama's separator
+    # one bed per tool + group source; source names carry no underscore, tama's separator
     os.makedirs(args.workdir, exist_ok=True)
     by_source = defaultdict(list)
     for uid in novel:
@@ -167,8 +185,11 @@ def main():
         for src in sorted(by_source):
             bed = os.path.join(args.workdir, src + ".bed")
             write_bed12(bed, by_source[src], tx)
+            # tama filelist row: bed, cap flag (no_cap = 5' ends not trusted), priority for
+            # 5' end, junctions, 3' end (1,1,1 = all sources equal), source name
             fl.write("%s\tno_cap\t1,1,1\t%s\n" % (bed, src))
 
+    # merge with tama and read back the merged models and their members
     prefix = os.path.join(args.workdir, "tama")
     run_tama(args.python2, args.tama_merge, filelist, prefix, args.junction_wobble, args.tes_tol,
              args.ends, len(novel))
@@ -176,6 +197,7 @@ def main():
     models = read_bed12(prefix + ".bed")
     members = read_members(prefix + "_trans_report.txt")
 
+    # re-classify the merged models against the reference with gffcompare
     merged_gtf = os.path.join(args.workdir, "merged.gtf")
     with open(merged_gtf, "w") as out:
         for mid, model in models.items():
@@ -185,15 +207,22 @@ def main():
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     merged_cc = load_tmap(cmp_prefix)
 
+    # sort the merged models by chrom, first exon start, last exon end
+    def model_position(mid):
+        chrom, _strand, exons = models[mid]
+        return (chrom, exons[0][0], exons[-1][1])
+
+    # write the consensus gtf with class code and reference tags, and note which tools support each model
     rows = []
-    order = sorted(models, key=lambda m: (models[m][0], models[m][2][0][0], models[m][2][-1][1]))
+    order = sorted(models, key=model_position)
     with open(args.output, "w") as out:
         for mid in order:
-            cc, ref_id = merged_cc.get(mid, ("u", "-"))
+            cc, ref_id = merged_cc.get(mid, UNMATCHED)
             tools = sorted({tx[u]["tool"] for u in members.get(mid, [])})
             out.write(gtf_lines(mid, *models[mid], extra=' class_code "%s"; cmp_ref "%s";' % (cc, ref_id)))
-            rows.append({"tid": mid, "cc": cc, "tools": tools})
+            rows.append({"transcript_id": mid, "class_code": cc, "tools": tools})
 
+    # count merged models per supporting-tool combination, all three tools first
     counts = Counter(tuple(r["tools"]) for r in rows)
     with open(args.overlap_out, "w") as out:
         out.write("# NOVEL consensus isoforms by supporting-tool combination "
@@ -203,11 +232,12 @@ def main():
             for s in combinations(TOOLS, k):
                 out.write("%s\t%d\n" % ("+".join(s), counts[s]))
         out.write("total_novel\t%d\n" % len(rows))
+    # membership table: one row per merged model, a 0/1 column per tool
     with open(args.membership_out, "w") as out:
         out.write("transcript_id\tclass_code\tis_novel\tn_tools\t%s\n" % "\t".join(TOOLS))
         for r in rows:
             flags = "\t".join("1" if t in r["tools"] else "0" for t in TOOLS)
-            out.write("%s\t%s\t1\t%d\t%s\n" % (r["tid"], r["cc"], len(r["tools"]), flags))
+            out.write("%s\t%s\t1\t%d\t%s\n" % (r["transcript_id"], r["class_code"], len(r["tools"]), flags))
 
     print("* tama merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
           "-> %d merged models (junctions +-%dbp, 3' +-%dbp, no_cap, %s) -> %s"

@@ -29,7 +29,7 @@ sample-name prefixes (`TDP_1` -> `TDP`).
 ## Steps (v9)
 
 1. pychopper 2.7.10 (`-m edlib`; kit PCS109 tdpkd, PCS111 sun), polyA kept
-2. minimap2 2.31 `-ax splice -ub -k14` (tdpkd) / `-ax splice:hq -ub` (sun), `--secondary=no -G 500k`,
+2. minimap2 2.31 `-ax splice -ub` (all cohorts, default k15 from the index), `--secondary=no -G 500k`,
    `--junc-bed` = GENCODE v50 junctions + the cohort's STAR junctions (>= 2 unique reads, canonical).
    tdpkd drops two short-read libraries via `exclude_samples`, here and in the SQANTI junction coverage:
    TDP-5 (aberrant differentiation) and CTRL-4 (low-depth outlier). The published v9 build (2026-09-21)

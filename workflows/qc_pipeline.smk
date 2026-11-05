@@ -1,3 +1,4 @@
+# tool path and the per-sample / per-cohort files shared by the qc rules
 minimap2_bin      = "/sc/arion/projects/ad-omics/data/software/minimap2-2.31/minimap2"
 output_cram       = out_folder + "{sample}/alignment/{sample}.aligned.cram"
 qc_bam            = out_folder + "{sample}/alignment/{sample}.qc.bam"
@@ -6,6 +7,7 @@ combined_junc_bed = out_folder + data_code + ".combined_junctions.bed"
 pychopper_stats   = expand(out_folder + "{sample}/pychopper/{sample}.stats.tsv", sample=samples)
 
 
+# raw long-read fastq of one sample, from the sample sheet
 def raw_fastq(wildcards):
     return metadata_dict[wildcards.sample]["long_read_fastq"]
 
@@ -13,19 +15,19 @@ def raw_fastq(wildcards):
 # minimap2 --junc-bed: the GENCODE junction bed plus the cohort's STAR introns (>= short_read_junc_min_uniq
 # unique reads, canonical motif), so ONT reads are aligned to splice sites the short reads confirm.
 # exclude_samples are dropped here (tdpkd: TDP-5 aberrant differentiation, CTRL-4 low-depth outlier).
-# The published v9 build (2026-09-21) did not drop them here: its tdpkd junc-bed had 508,354 short-read
-# junctions, vs 500,324 with the two dropped.
 rule build_junc_bed:
     input:
         anno = config['junctions_bed'],
-        sj   = junction_folder
+        sj   = junction_folder,
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/build_junc_bed.py"
     output:
         combined_junc_bed
     params:
         exclude = ",".join(sorted(excluded_samples))
     shell:
         """
-        python scripts/build_junc_bed.py \
+        python {input.script} \
         --annotation {input.anno} \
         --sj_folder {input.sj} \
         --min_uniq {config[short_read_junc_min_uniq]} --canonical_only \
@@ -34,6 +36,10 @@ rule build_junc_bed:
         """
 
 
+# pychopper finds the cDNA primers of the kit (-k) at both read ends (-m edlib alignment), orients
+# each read to the transcript strand and trims the primers. kept = reads with both primers (primary)
+# plus reads rescued from fused molecules (-w); unclassified reads (-u) are deleted. the pdf report
+# and the stats table stay; the stats feed the full-length share in the qc summary
 rule pychopper:
     input:
         fastq = raw_fastq
@@ -60,6 +66,11 @@ rule pychopper:
         """
 
 
+# spliced alignment with minimap2 (Li 2018): the preset and flags come from the config (splice; -ub =
+# look for GT-AG splice signals on both strands). k is fixed when the .mmi index is built, so the index
+# decides it, not this line. --secondary=no writes no secondary alignments.
+# -G 500k widens the intron search to 500 kb, above the default 200 kb; it is not a hard limit, so some
+# introns come out longer. --junc-bed gives a bonus at the splice sites in the combined bed.
 rule nanopore_alignment:
     input:
         index = config['ref_genome_index'],
@@ -80,6 +91,7 @@ rule nanopore_alignment:
         """
 
 
+# sort and store the alignments as cram against the genome fasta
 rule sam_to_cram:
     input:
         out_folder + "{sample}/alignment/{sample}.aligned.sam"
@@ -111,6 +123,7 @@ rule cram_to_qc_bam:
         """
 
 
+# read and per-chromosome mapping counts
 rule samtools_qc:
     input:
         bam = qc_bam,
@@ -125,6 +138,10 @@ rule samtools_qc:
         """
 
 
+# rnaseqc gene / exon metrics. --unpaired counts single reads, which rnaseqc otherwise skips.
+# --mapping-quality 0 and --base-mismatch=1000 keep every aligned long read (nanopore reads carry many
+# mismatches, the short-read defaults would discard most of them); --detection-threshold=1 calls a
+# gene detected from 1 read; --coverage also writes per-transcript coverage
 rule rnaseqc:
     input:
         bam = qc_bam,
@@ -144,6 +161,7 @@ rule rnaseqc:
         """
 
 
+# read count and length statistics of the raw reads (before pychopper)
 rule nanostat_raw:
     input:
         reads = raw_fastq
@@ -154,6 +172,7 @@ rule nanostat_raw:
         "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
 
 
+# the same statistics over the mapped records of the alignment
 rule nanostat_aligned:
     input:
         bam = qc_bam,
@@ -165,6 +184,9 @@ rule nanostat_aligned:
         "NanoStat --bam {input.bam} --tsv -t {threads} > {output}"
 
 
+# rRNA interval list for picard: the awk keeps the gene lines whose gene_type is rRNA,
+# rRNA_pseudogene or Mt_rRNA and prints them as bed (0-based start, gene_id as the name, strand);
+# picard turns the bed into an interval list against the genome's sequence dictionary
 rule rrna_intervals:
     input:
         gtf    = ref_gtf,
@@ -184,6 +206,8 @@ rule rrna_intervals:
         """
 
 
+# picard rna-seq metrics (coding / utr / intronic / rRNA shares). pychopper has oriented every read
+# to the transcript strand, so the read itself is on the transcription strand
 rule picard:
     input:
         bam    = qc_bam,
@@ -203,6 +227,8 @@ rule picard:
         """
 
 
+# length of every mapped record, for the read-length histogram (-F 4 drops only unmapped records;
+# supplementary records stay in)
 rule read_lengths:
     input:
         qc_bam
@@ -216,19 +242,23 @@ rule read_lengths:
         """
 
 
+# per-cohort qc tables: read-length histogram and the per-sample summary
 rule longread_qc_tables:
     input:
         lengths = expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample=samples),
         raw     = expand(out_folder + "{sample}/qc/{sample}.nanostat.raw.tsv",       sample=samples),
         aligned = expand(out_folder + "{sample}/qc/{sample}.nanostat.aligned.tsv",   sample=samples),
-        pyc     = pychopper_stats
+        pyc     = pychopper_stats,
+        # the sample sheet and the script are inputs, so editing either redoes the qc tables
+        metadata = config['metadata'],
+        script  = "scripts/longread_qc_tables.py"
     output:
         hist    = out_folder + data_code + "_read_length_hist.tsv.gz",
         summary = out_folder + data_code + "_longread_qc_summary.tsv"
     shell:
         """
-        python scripts/longread_qc_tables.py \
-        --metadata {config[metadata]} \
+        python {input.script} \
+        --metadata {input.metadata} \
         --read-lengths {input.lengths} \
         --nanostat-raw {input.raw} \
         --nanostat-aligned {input.aligned} \

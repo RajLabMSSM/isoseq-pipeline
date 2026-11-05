@@ -9,20 +9,28 @@ import re
 import sys
 from collections import Counter
 
+# the tama helpers live in consensus_tama.py next to this script
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from consensus_tama import read_bed12, run_tama, write_bed12  # noqa: E402
 
+# gene ids of the per-cohort novel loci carry this tag (build_reference_with_novel.py, --prefix NOVEL)
+COHORT_LOCUS_TAG = "NOVELG_"
+
 
 def attr(field, key):
+    # value of one gtf attribute (key "value";), or None when the key is missing
     m = re.search(key + r' "([^"]*)"', field)
     return m.group(1) if m else None
 
 
 def opener(path):
+    # open plain or gzipped text the same way
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
 
 def load_novel(path, cohort, source_tag, tx):
+    # add the novel models (source column = source_tag) of one cohort gtf to tx, keyed <cohort>_<id>;
+    # returns how many were added
     n = 0
     with opener(path) as fh:
         for line in fh:
@@ -64,6 +72,7 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
+    # load every cohort's novel models
     tx = {}
     per_cohort = {}
     for spec in args.cohort:
@@ -73,6 +82,7 @@ def main():
         per_cohort[name] = load_novel(path, name, args.novel_source, tx)
     for d in tx.values():
         d["exons"].sort()
+    # spliced stranded models go to tama; single-exon ones are dropped; an unstranded spliced one stops the run
     n_loaded = len(tx)
     spliced = [u for u in tx if len(tx[u]["exons"]) > 1 and tx[u]["strand"] in ("+", "-")]
     n_mono = sum(1 for u in tx if len(tx[u]["exons"]) == 1)
@@ -82,6 +92,7 @@ def main():
     print("* loaded novel isoforms: " + ", ".join("%s=%d" % (k, v) for k, v in per_cohort.items())
           + " (total %d, %d single-exon dropped)" % (n_loaded, n_mono))
 
+    # one bed per cohort (name field = the cohort's own id), merged with tama, every cohort equal (1,1,1)
     os.makedirs(args.workdir, exist_ok=True)
     filelist = os.path.join(args.workdir, "filelist.txt")
     with open(filelist, "w") as fl:
@@ -93,6 +104,8 @@ def main():
     run_tama(args.python2, args.tama_merge, filelist, prefix, args.wobble, args.tes_tol, args.ends,
              len(spliced))
     models = read_bed12(prefix + ".bed")
+    # merged model -> its members as <cohort>_<id>, the keys of tx. consensus_tama.read_members strips
+    # the source prefix, so it is not reused here
     members = {}
     with open(prefix + "_trans_report.txt") as fh:
         hdr = fh.readline().rstrip("\n").split("\t")
@@ -103,16 +116,22 @@ def main():
     print("* tama merge: %d spliced novel -> %d cross-cohort isoforms (junctions +-%dbp, 3' +-%dbp, no_cap)"
           % (len(spliced), len(models), args.wobble, args.tes_tol))
 
+    # one record per merged model: its cohorts, its members as cohort:id, and the longest member
+    # (summed exon length), whose gene id, class code and reference gene the model takes
     reps = []
     for mid, (chrom, strand, exons) in models.items():
         mem = members[mid]
         cohorts = sorted({m.split("_", 1)[0] for m in mem})
         mem = sorted(mem, key=lambda m: tx[m]["cohort"])
+        # max keeps the first of equally long members, so a tie goes to the first cohort in name order
         longest = max(mem, key=lambda m: sum(e - s + 1 for s, e in tx[m]["exons"]))
         src_ids = "|".join("%s:%s" % (tx[m]["cohort"], tx[m]["orig_id"]) for m in mem)
-        reps.append((mid, chrom, strand, exons, cohorts, src_ids, len(mem), tx[longest]))
-    reps.sort(key=lambda r: (r[1], r[3][0][0], r[3][-1][1]))
+        reps.append({"chrom": chrom, "strand": strand, "exons": exons, "cohorts": cohorts,
+                     "src_ids": src_ids, "n_members": len(mem), "longest": tx[longest]})
+    # genome order: chrom, first exon start, last exon end
+    reps.sort(key=lambda r: (r["chrom"], r["exons"][0][0], r["exons"][-1][1]))
 
+    # output gtf: GENCODE as is (header lines dropped), then the merged models as <prefix>_NNNNNNNN
     ref_tx = 0
     with open(args.output, "w") as out, open(args.provenance_out, "w") as prov:
         prov.write("new_id\tgene_id\tclass_code\tn_cohorts\tcohorts\tn_members\tsrc_ids\n")
@@ -123,11 +142,16 @@ def main():
                 out.write(line)
                 if line.split("\t", 3)[2] == "transcript":
                     ref_tx += 1
-        for i, (_, chrom, strand, exons, cohorts, src_ids, nmem, d) in enumerate(reps, start=1):
+        for i, rep in enumerate(reps, start=1):
+            chrom = rep["chrom"]
+            strand = rep["strand"]
+            exons = rep["exons"]
+            cohorts = rep["cohorts"]
+            d = rep["longest"]
             nid = "%s_%08d" % (args.prefix, i)
             gid = d["gene_id"] or nid
-            # per-cohort locus ids restart in every cohort
-            if "NOVELG_" in gid:
+            # per-cohort locus ids restart in every cohort, so the cohort name is put in front
+            if COHORT_LOCUS_TAG in gid:
                 gid = "%s_%s" % (d["cohort"], gid)
             cc = d["class_code"] or "u"
             out.write("\t".join([chrom, args.novel_source, "transcript", str(exons[0][0]), str(exons[-1][1]),
@@ -138,13 +162,14 @@ def main():
                 out.write("\t".join([chrom, args.novel_source, "exon", str(s), str(e), ".", strand, ".",
                                      'gene_id "%s"; transcript_id "%s";' % (gid, nid)]) + "\n")
             prov.write("%s\t%s\t%s\t%d\t%s\t%d\t%s\n"
-                       % (nid, gid, cc, len(cohorts), ",".join(cohorts), nmem, src_ids))
+                       % (nid, gid, cc, len(cohorts), ",".join(cohorts), rep["n_members"], rep["src_ids"]))
 
-    shared = sum(1 for r in reps if len(r[4]) > 1)
+    shared = sum(1 for r in reps if len(r["cohorts"]) > 1)
     print("* wrote %d cross-cohort novel isoforms (%d shared by >1 cohort) + GENCODE -> %s"
           % (len(reps), shared, args.output))
 
-    by_combo = Counter(",".join(r[4]) for r in reps)
+    # summary table: the funnel and the number of models per cohort combination
+    by_combo = Counter(",".join(r["cohorts"]) for r in reps)
     rows = [("novel_in_%s" % name, n) for name, n in per_cohort.items()]
     rows += [("novel_in_total", n_loaded), ("novel_monoexon_dropped", n_mono),
              ("cross_cohort_novel_after_endaware_collapse", len(reps)),

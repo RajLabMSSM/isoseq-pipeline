@@ -1,20 +1,27 @@
+# convert the reference gtf once into bambu's annotation object (prepareAnnotations)
 rule bambu_create_annotation:
     input:
-        gtf = ref_gtf
+        gtf = ref_gtf,
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/bambu_annotation.R"
     output:
         rdata = out_folder + "bambu/bambu_annotation.RData"
     shell:
         """
         conda activate bambu_env
-        Rscript scripts/bambu_annotation.R -i {input.gtf} -o {output.rdata}
+        Rscript {input.script} -i {input.gtf} -o {output.rdata}
         """
 
 
+# joint discovery and quantification on the pooled bam of one group (Chen et al. 2023). NDR = novel
+# discovery rate: the largest expected share of false models among the novel ones bambu keeps
 rule run_bambu:
     input:
         bams = lambda wc: pooled_bam(wc.group),
         bai  = lambda wc: pooled_bam(wc.group) + ".bai",
-        anno = out_folder + "bambu/bambu_annotation.RData"
+        anno = out_folder + "bambu/bambu_annotation.RData",
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/bambu_run.R"
     output:
         gtf    = out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf",
         counts = out_folder + "bambu/{group}/" + data_code + "_{group}_counts_transcript.txt",
@@ -25,7 +32,7 @@ rule run_bambu:
     shell:
         """
         conda activate bambu_env
-        Rscript scripts/bambu_run.R \
+        Rscript {input.script} \
         --cores {threads} \
         --fasta {genome} \
         --anno {input.anno} \

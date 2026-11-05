@@ -15,6 +15,7 @@ COHORTS=(
 RESUME=""
 CROSS_ONLY=""
 while getopts 'rxh' flag; do
+  # -r resume, -x cross-cohort only; any other flag prints the comment header at the top of this file
   case "$flag" in
     r) RESUME="-r" ;;
     x) CROSS_ONLY="1" ;;
@@ -25,6 +26,8 @@ shift $((OPTIND - 1))
 [ $# -eq 0 ] || { echo "usage: build_reference.sh [-r] [-x]" >&2; exit 1; }
 
 launch_cross() {
+  # start the cross-cohort union at once when no dependency is given, otherwise submit a small LSF
+  # job that waits (-w) for the cohort runs and then starts it
   cd "$XC"
   mkdir -p logs
   if [ -z "$1" ]; then
@@ -45,14 +48,23 @@ fi
 
 dep=""
 for entry in "${COHORTS[@]}"; do
-  dir="${entry%%:*}"; cfg="${entry##*:}"
+  # submit each cohort run and collect its LSF job id into one dependency expression,
+  # done(<id1>) && done(<id2>) ..., so the cross-cohort trigger waits for all of them
+  # each entry is "<cohort folder>:<config file>": the part before and after the colon
+  dir="${entry%%:*}"
+  cfg="${entry##*:}"
   cd "$dir"
   # the real path, not the cohort's symlink: workflow.basedir must be this repo (misc/sqanti_rules.json)
   out=$(snakejob_HPC -s "$REPO/pipelines/isoseq-pipeline/Snakefile" -c "$cfg" $RESUME)
   echo "$out"
+  # the job id is the number in LSF's "Job <id> is submitted" line (the last one printed)
   id=$(echo "$out" | grep -oP 'Job <\K[0-9]+' | tail -1)
   [ -n "$id" ] || { echo "ERROR: no job id captured for $dir" >&2; exit 1; }
-  dep="${dep:+$dep && }done($id)"
+  if [ -z "$dep" ]; then
+    dep="done($id)"
+  else
+    dep="$dep && done($id)"
+  fi
 done
 
 launch_cross "$dep"

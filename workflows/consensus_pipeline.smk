@@ -7,6 +7,7 @@ sanity_gene_list  = "STMN2,UNC13A"
 sanity_event_list = "STMN2:chr8:79616822-79617207,UNC13A:chr19:17642414-17642541"
 
 
+# the three assembler gtfs of one group, by tool
 def tool_gtfs(g):
     return {"bambu":     out_folder + "bambu/%s/%s_%s_extended_annotations.gtf" % (g, data_code, g),
             "isoquant":  out_folder + "isoquant/%s/%s_%s/%s_%s.extended_annotation.gtf" % (g, data_code, g, data_code, g),
@@ -17,7 +18,10 @@ def tool_gtfs(g):
 rule consensus_isoforms:
     input:
         gtfs = [p for g in groups for p in tool_gtfs(g).values()],
-        ref  = ref_gtf
+        ref  = ref_gtf,
+        # both scripts are inputs (consensus_tama.py runs tama_merge), so editing either rebuilds the consensus
+        union_script = "scripts/build_union.py",
+        tama_script  = "scripts/consensus_tama.py"
     output:
         gtf      = cons + "_merged_consensus.gtf",
         venn_tsv = cons + "_tool_overlap.tsv",
@@ -26,13 +30,14 @@ rule consensus_isoforms:
     params:
         prefix     = cons + "_gffcmp",
         union      = cons + "_union.gtf",
+        # one --gtf <tool> <group> <path> argument per tool and group
         union_args = " ".join("--gtf %s %s %s" % (t, g, p) for g in groups for t, p in tool_gtfs(g).items()),
         workdir    = out_folder + "consensus/tama_tmp"
     shell:
         """
-        python scripts/build_union.py {params.union_args} --reference {input.ref} -o {params.union}
+        python {input.union_script} {params.union_args} --reference {input.ref} -o {params.union}
         {gffcompare} -r {input.ref} -o {params.prefix} {params.union}
-        python scripts/consensus_tama.py \
+        python {input.tama_script} \
         --union {params.union} \
         --gffcmp-prefix {params.prefix} \
         --reference {input.ref} \
@@ -59,13 +64,15 @@ rule reference_with_novel:
         member = cons + "_tool_membership.tsv",
         keep   = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
         sqanti = out_folder + "sqanti/" + data_code + "_classification.txt",
-        ref    = ref_gtf
+        ref    = ref_gtf,
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/build_reference_with_novel.py"
     output:
         gtf  = temp(cons + ".isoforms.gtf"),
         prov = cons + "_novel_provenance.tsv"
     shell:
         """
-        python scripts/build_reference_with_novel.py \
+        python {input.script} \
         --merged {input.merged} \
         --reference {input.ref} \
         --sqanti-classification {input.sqanti} \
@@ -79,6 +86,7 @@ rule reference_with_novel:
         """
 
 
+# transcript sequences of the cohort's final gtf
 rule reference_fasta:
     input:
         gtf    = cons + ".isoforms.gtf",
@@ -112,7 +120,9 @@ rule sanity_genes:
         gtf  = cons + ".isoforms.gtf",
         ref  = ref_gtf,
         cons = cons + "_merged_consensus.gtf",
-        sqp  = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt"
+        sqp  = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/check_genes.py"
     output:
         tsv    = cons + "_sanity_genes.tsv",
         events = cons + "_sanity_genes.tsv.events.tsv"
@@ -121,7 +131,7 @@ rule sanity_genes:
         sqr   = out_folder + "sqanti/" + data_code + "_filtering_reasons.txt"
     shell:
         """
-        python scripts/check_genes.py \
+        python {input.script} \
         --reference {input.ref} \
         --gtf {input.gtf} \
         --genes '{sanity_gene_list}' \
@@ -137,18 +147,21 @@ rule sanity_genes:
         """
 
 
+# the cohort's funnel numbers (raw -> consensus -> SQANTI -> final) as metric<TAB>value
 rule tracking_numbers:
     input:
         stats  = cons + "_consensus_stats.tsv",
         member = cons + "_tool_membership.tsv",
         sqanti = out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
         keep   = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
-        ref    = ref_gtf
+        ref    = ref_gtf,
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/tracking_numbers.py"
     output:
         tsv = cons + "_tracking_numbers.tsv"
     shell:
         """
-        python scripts/tracking_numbers.py \
+        python {input.script} \
         --stats {input.stats} \
         --membership {input.member} \
         --sqanti-classification {input.sqanti} \

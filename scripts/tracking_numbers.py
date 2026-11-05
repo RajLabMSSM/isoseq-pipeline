@@ -10,18 +10,22 @@ from collections import Counter
 from itertools import combinations
 
 TOOLS = ["bambu", "isoquant", "stringtie"]
+# every tool combination, the three-tool one first, then pairs, then single tools
 COMBOS = [c for k in range(len(TOOLS), 0, -1) for c in combinations(TOOLS, k)]
 
 
 def read_table(path):
+    # yield each row of a tab-separated table with a header as a dict
     with open(path) as fh:
         hdr = fh.readline().rstrip("\n").split("\t")
         for line in fh:
             yield dict(zip(hdr, line.rstrip("\n").split("\t")))
 
 
-def overlap(tools, keep):
-    venn = Counter(present for tid, present in tools.items() if tid in keep)
+def overlap(tools_of, keep_ids):
+    # among the models in keep_ids: count per tool combination (venn) and per tool (a model built by two
+    # tools counts under both)
+    venn = Counter(present for tid, present in tools_of.items() if tid in keep_ids)
     per_tool = Counter()
     for present, n in venn.items():
         for t in present:
@@ -40,30 +44,46 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
+    # per-tool counts from the consensus stats table
     stats = {r["tool"]: r for r in read_table(args.stats)}
-    raw, novelcand, mono, unstr = ({t: int(stats[t][k]) for t in TOOLS} for k in
-                                   ("raw_all", "novel_candidates", "monoexon_dropped", "unstranded_dropped"))
+    raw = {t: int(stats[t]["raw_all"]) for t in TOOLS}
+    novelcand = {t: int(stats[t]["novel_candidates"]) for t in TOOLS}
+    mono = {t: int(stats[t]["monoexon_dropped"]) for t in TOOLS}
+    unstr = {t: int(stats[t]["unstranded_dropped"]) for t in TOOLS}
+    # consensus model -> tools that built it, from the membership table
     tools = {r["transcript_id"]: tuple(t for t in TOOLS if r[t] == "1") for r in read_table(args.membership)}
-    passed, min_cov = set(), {}
+    # SQANTI: models passing its filter, and the lowest short-read coverage of any junction (min_cov)
+    passed = set()
+    min_cov = {}
     for r in read_table(args.sqanti_classification):
         if r["filter_result"] == "Isoform":
             passed.add(r["isoform"])
         if r["min_cov"] != "NA":
             min_cov[r["isoform"]] = int(r["min_cov"])
+    # final novel ids, and the number of reference transcripts (transcript lines of the reference gtf)
     with open(args.pass_ids) as fh:
         final_ids = {line.strip() for line in fh if line.strip()}
+    n_ref = 0
     with open(args.reference) as fh:
-        n_ref = sum(1 for line in fh if not line.startswith("#") and line.split("\t")[2:3] == ["transcript"])
+        for line in fh:
+            fields = line.split("\t")
+            if not line.startswith("#") and len(fields) > 2 and fields[2] == "transcript":
+                n_ref += 1
 
-    n_cons, sqanti_pass = len(tools), len(passed)
-    venn, cons_per_tool = overlap(tools, tools)
+    # tool overlap of all consensus models and of the SQANTI-passed ones
+    n_cons = len(tools)
+    sqanti_pass = len(passed)
+    venn, cons_per_tool = overlap(tools, set(tools))
     venn_sq, sq_per_tool = overlap(tools, final_ids)
+    # long-read specific (a junction with no short-read coverage) versus short-read supported models
     lr_ids = {t for t, v in min_cov.items() if v == 0}
     sr_ids = {t for t, v in min_cov.items() if v > 0}
-    lr = overlap(tools, lr_ids)[1]
-    sr = overlap(tools, sr_ids)[1]
+    _, lr = overlap(tools, lr_ids)
+    _, sr = overlap(tools, sr_ids)
+    # spliced, stranded candidates that went into tama_merge
     spliced = {t: novelcand[t] - mono[t] - unstr[t] for t in TOOLS}
 
+    # metric rows in funnel order; each per-tool block ends with its total
     rows = [("cohort", args.cohort)]
     for name, d in (("raw_%s_all", raw), ("novel_candidates_%s", novelcand),
                     ("novel_monoexon_dropped_%s", mono), ("novel_unstranded_dropped_%s", unstr),
@@ -81,6 +101,8 @@ def main():
     rows.append(("lr_specific_total", len(lr_ids & tools.keys())))
     rows += [("sr_supported_%s" % t, sr[t]) for t in TOOLS]
     rows.append(("sr_supported_total", len(sr_ids & tools.keys())))
+    # novel_pre_sqanti and sqanti_removed count every merged model, including the few that the merged
+    # gffcompare re-classified = or c, which are left out of the SQANTI input
     rows += [("novel_pre_sqanti", n_cons), ("sqanti_pass", sqanti_pass),
              ("sqanti_removed", n_cons - sqanti_pass), ("final_novel", len(final_ids)),
              ("reference_transcripts", n_ref), ("final_total", n_ref + len(final_ids))]

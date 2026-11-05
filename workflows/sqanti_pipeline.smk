@@ -1,23 +1,28 @@
 import glob
 import os
 
+# the rules filter definition kept in the pipeline repo
 sqanti_rules = os.path.join(workflow.basedir, "misc", "sqanti_rules.json")
 # STAR junctions for SQANTI's short-read junction coverage. exclude_samples are dropped (tdpkd: TDP-5
-# aberrant differentiation, CTRL-4 low-depth outlier); the published v9 build dropped them here too.
+# aberrant differentiation, CTRL-4 low-depth outlier); the sample id is the file name before the
+# first dot (<sample>.SJ.out.tab)
 sqanti_sj =[f for f in sorted(glob.glob(os.path.join(junction_folder, "*.SJ.out.tab")))
              if os.path.basename(f).split(".")[0] not in excluded_samples]
 
 
-# keeps the merged ids so SQANTI's pass list maps straight back onto merged_consensus
+# the novel consensus models (class codes = and c left out) under their merged ids, so SQANTI's pass
+# list maps straight back onto merged_consensus
 rule novel_consensus_gtf:
     input:
         merged = cons + "_merged_consensus.gtf",
-        ref    = ref_gtf
+        ref    = ref_gtf,
+        # the script is an input, so editing it re-runs this step
+        script = "scripts/build_reference_with_novel.py"
     output:
         gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf"
     shell:
         """
-        python scripts/build_reference_with_novel.py \
+        python {input.script} \
         --merged {input.merged} \
         --reference {input.ref} \
         --exclude-codes '=,c' \
@@ -58,7 +63,8 @@ rule sqanti_qc:
         """
 
 
-# rules: FSM intra-priming only; the rest also all-canonical + min_sample_cov >= 2. RTS_stage is left out, it drops the UNC13A CE
+# rules: FSM intra-priming only; the rest also all-canonical + min_sample_cov >= 2. RTS_stage is left out, it drops the UNC13A CE.
+# -e (--filter_mono_exonic) also drops every single-exon model
 rule sqanti_filter:
     input:
         classification = out_folder + "sqanti/" + data_code + "_classification.txt",

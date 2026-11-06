@@ -38,8 +38,7 @@ rule build_junc_bed:
 
 # pychopper finds the cDNA primers of the kit (-k) at both read ends (-m edlib alignment), orients
 # each read to the transcript strand and trims the primers. kept = reads with both primers (primary)
-# plus reads rescued from fused molecules (-w); unclassified reads (-u) are deleted. the pdf report
-# and the stats table stay; the stats feed the full-length share in the qc summary
+# plus reads rescued from fused molecules (-w); unclassified reads (-u) are deleted. 
 rule pychopper:
     input:
         fastq = raw_fastq
@@ -67,8 +66,7 @@ rule pychopper:
 
 
 # spliced alignment with minimap2 (Li 2018): the preset comes from the config. splice already looks for
-# GT-AG splice signals on both strands (-ub). k is fixed when the .mmi index is built, so the index
-# decides it, not this line. --secondary=no writes no secondary alignments.
+# GT-AG splice signals on both strands (-ub). k is fixed when the .mmi index is built, it's k=15 which is default. --secondary=no writes no secondary alignments.
 # -G 500k widens the intron search to 500 kb, above the default 200 kb; it is not a hard limit, so some
 # introns come out longer. --junc-bed gives a bonus at the splice sites in the combined bed.
 rule nanopore_alignment:

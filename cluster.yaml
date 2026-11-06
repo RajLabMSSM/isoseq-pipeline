@@ -91,6 +91,11 @@ run_isoquant:
   queue: premium
   himem: "-R himem"
 
+stringtie_pool_short_bams:
+  cores: 4
+  mem: 1000
+  time: 120
+
 run_stringtie:
   cores: 4
   mem: 6000

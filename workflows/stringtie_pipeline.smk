@@ -19,13 +19,14 @@ rule stringtie_pool_short_bams:
         """
 
 
-# hybrid long + short read assembly (Shumate et al. 2022): --mix takes the short-read bam first;
-# -G guides it with the reference annotation. -t is off, with it the HYOU1 exon-10 skip is lost
+# hybrid assembly (Shumate et al. 2022): --mix reads the short-read bam first, the long-read bam second; -G guides it
+# with GENCODE. in this mode a novel model needs coverage 4.75 (the -s default), and it can rest on short reads alone.
+# -t is off: with it the HYOU1 exon-10 skip is lost (it has 1,340 short and 10 long reads). --rf is off even though
+# the short reads are stranded: it also sets the strand of unspliced long reads, wrongly
 rule run_stringtie:
     input:
         gtf       = ref_gtf,
         long_bam  = lambda wc: pooled_bam(wc.group),
-        long_bai  = lambda wc: pooled_bam(wc.group) + ".bai",
         short_bam = lambda wc: short_bam(wc.group)
     output:
         gtf = out_folder + "stringtie3/{group}/" + data_code + "_{group}.stringtie.gtf"

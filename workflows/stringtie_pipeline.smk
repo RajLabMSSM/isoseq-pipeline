@@ -1,7 +1,7 @@
 stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-3.0.3.Linux_x86_64/stringtie"
 
 
-# pool the short-read bams of one group for stringtie --mix and isoquant --illumina_bam. a library in
+# pool the short-read bams of one group for stringtie --mix. a library in
 # exclude_samples stays out of the pool, even when its long reads are used (tdpkd CTRL4: long reads in,
 # short reads out), so the same short-read libraries feed the hints, this pool and the SQANTI coverage
 rule stringtie_pool_short_bams:

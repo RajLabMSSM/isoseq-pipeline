@@ -13,8 +13,8 @@ rule bambu_create_annotation:
         """
 
 
-# joint discovery and quantification on the pooled bam of one group (Chen et al. 2023). NDR = novel
-# discovery rate: the largest expected share of false models among the novel ones bambu keeps
+# discovery and quantification on the pooled bam of one group (Chen et al. 2023). NDR = novel discovery rate: the share
+# of unannotated models among all candidates ranked at or above a model's score. one bam runs on one core
 rule run_bambu:
     input:
         bams = lambda wc: pooled_bam(wc.group),
@@ -28,7 +28,7 @@ rule run_bambu:
         rdata  = out_folder + "bambu/{group}/" + data_code + "_{group}_bambu.RData"
     params:
         prefix = out_folder + "bambu/{group}/" + data_code + "_{group}"
-    threads: 8
+    threads: 1
     shell:
         """
         conda activate bambu_env

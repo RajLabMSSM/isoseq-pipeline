@@ -38,12 +38,12 @@ for s in samples:
         raise ValueError("sample %s matches %d of the groups %s, expected exactly one" % (s, len(matched), groups))
 
 
-# pooled long-read bam of one group (input of bambu and isoquant)
+# pooled long-read bam of one group (input of bambu, isoquant and stringtie)
 def pooled_bam(group):
     return out_folder + "pooled/" + data_code + "_%s.pooled.bam" % group
 
 
-# pooled short-read bam of one group (stringtie --mix, isoquant --illumina_bam)
+# pooled short-read bam of one group (stringtie --mix)
 def short_bam(group):
     return out_folder + "stringtie3/%s/%s_%s.pooled.short.bam" % (group, data_code, group)
 
@@ -64,7 +64,6 @@ rule all:
         out_folder + data_code + "_longread_qc_summary.tsv",
         out_folder + "multiqc/multiqc_report.html",
         expand(out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf", group=groups),
-        expand(out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.extended_annotation.gtf", group=groups),
         expand(out_folder + "stringtie3/{group}/" + data_code + "_{group}.stringtie.gtf", group=groups),
         out_folder + "consensus/" + data_code + ".isoforms.gtf.gz",
         out_folder + "consensus/" + data_code + ".isoforms.fa.gz",

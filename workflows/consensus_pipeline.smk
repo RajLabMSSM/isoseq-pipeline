@@ -43,7 +43,6 @@ rule consensus_isoforms:
         --reference {input.ref} \
         --junction-wobble {config[consensus_junction_wobble]} \
         --tes-tol {config[consensus_tes_tol]} \
-        --ends common_ends \
         --exclude-codes '=,c' \
         --tama-merge {tama_merge} \
         --python2 {python2} \

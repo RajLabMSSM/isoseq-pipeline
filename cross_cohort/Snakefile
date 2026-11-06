@@ -15,9 +15,11 @@ TAMA       = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
 PYTHON2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"
 GFFCOMPARE = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"
 
-OUT     = config["output_dir"]
-NAME    = config["output_name"]
-cohorts = config["cohorts"]
+# everything named after the build comes from run_code, so a new build cannot read or overwrite an old one
+RUN     = config["run_code"]
+OUT     = config["reference_root"] + RUN + "/"
+NAME    = "isoforms_" + RUN
+cohorts = {name: path.format(run_code=RUN) for name, path in config["cohorts"].items()}
 # one --cohort name=gtf argument per cohort
 cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohorts.items())
 # each cohort pipeline writes its provenance and tracking tables next to its final gtf, under the
@@ -37,7 +39,7 @@ rule all:
 
 
 # the cohorts' SQANTI-passed novels merged with tama_merge (Kuo et al. 2020) at the within-cohort
-# tolerances (junctions +- wobble bp, 3' ends +- tes_tol bp, common ends), then GENCODE appended
+# tolerances (junctions +- wobble bp, 3' ends +- tes_tol bp), then GENCODE appended
 rule cross_cohort_union:
     input:
         ref     = config["reference"],
@@ -59,7 +61,6 @@ rule cross_cohort_union:
         --novel-source ONT \
         --wobble {config[wobble]} \
         --tes-tol {config[tes_tol]} \
-        --ends common_ends \
         --tama-merge {TAMA} \
         --python2 {PYTHON2} \
         --workdir {params.workdir} \

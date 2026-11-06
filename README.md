@@ -37,10 +37,10 @@ sample-name prefixes (`TDP_1` -> `TDP`).
    short-read junctions, vs 500,324 with the two dropped)
 3. Per group, on the pooled long-read BAM:
    - StringTie 3.0.3 `--mix -G` (short-read BAM first; no `-t`)
-   - IsoQuant 3.13.0 `default_ont`, `--illumina_bam`, `--clean_start`, `--read_group file_name`
+   - IsoQuant 3.13.0 `default_ont`, `--clean_start`
    - Bambu 3.12.1, NDR 0.7
 4. Union of tool x group models; models in GENCODE (`=`, `c`), single-exon and unstranded models
-   dropped; `tama_merge -m 6 -z 100 -e common_ends -d merge_dup`, one `no_cap` source per tool and
+   dropped; `tama_merge -m 0 -z 100 -d merge_dup`, one `no_cap` source per tool and
    group (no tool vote); gffcompare 0.12.10 for class codes
 5. SQANTI3 6.0.1 QC with the cohort's `SJ.out.tab`, CAGE peaks and polyA motifs; `sqanti3_filter.py
    rules -e` with `misc/sqanti_rules.json`

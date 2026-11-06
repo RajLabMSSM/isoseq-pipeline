@@ -16,12 +16,14 @@ opt <- arguments$opt
 library(bambu)
 # the prepared annotation .RData holds one object called anno (from prepareAnnotations)
 load(opt$anno)
-# a FaFile, not a path: a path string makes bambu query BiocManager over the network
+# a FaFile, not a path: this bambu install stops with an error on a path string
 genome <- Rsamtools::FaFile(opt$fasta)
-# all of the group's bams together: joint discovery; NDR = novel discovery rate, the expected
-# share of false models among the novel ones bambu keeps (Chen et al. 2023)
+# no --NDR means NULL, which makes bambu use its own recommended NDR
+ndr <- if (is.null(opt$NDR)) NULL else as.numeric(opt$NDR)
+# one pooled bam per group, so pooling has already happened. NDR = novel discovery rate: the share of unannotated
+# models among all candidates ranked at or above a model's score (Chen et al. 2023). with one bam, ncore has no effect
 res <- bambu(reads = arguments$args, annotations = anno, genome = genome,
-             NDR = as.numeric(opt$NDR), ncore = as.numeric(opt$cores))
+             NDR = ndr, ncore = as.numeric(opt$cores))
 # write the gtf and count tables, each file name starting with "<prefix>_"
 writeBambuOutput(se = res, path = dirname(opt$prefix), prefix = paste0(basename(opt$prefix), "_"))
 # keep the full result; the object inside the .RData is named res, so the name stays

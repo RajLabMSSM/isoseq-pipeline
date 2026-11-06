@@ -62,7 +62,6 @@ def main():
     ap.add_argument("--novel-source", required=True)
     ap.add_argument("--wobble", type=int, required=True)
     ap.add_argument("--tes-tol", type=int, required=True)
-    ap.add_argument("--ends", required=True, choices=["common_ends", "longest_ends"])
     ap.add_argument("--tama-merge", required=True)
     ap.add_argument("--python2", required=True)
     ap.add_argument("--workdir", required=True)
@@ -101,7 +100,7 @@ def main():
             write_bed12(bed, [u for u in spliced if tx[u]["cohort"] == name], tx, lambda u: tx[u]["orig_id"])
             fl.write("%s\tno_cap\t1,1,1\t%s\n" % (bed, name))
     prefix = os.path.join(args.workdir, "tama")
-    run_tama(args.python2, args.tama_merge, filelist, prefix, args.wobble, args.tes_tol, args.ends,
+    run_tama(args.python2, args.tama_merge, filelist, prefix, args.wobble, args.tes_tol,
              len(spliced))
     models = read_bed12(prefix + ".bed")
     # merged model -> its members as <cohort>_<id>, the keys of tx. consensus_tama.read_members strips

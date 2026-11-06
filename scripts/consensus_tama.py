@@ -100,13 +100,13 @@ def gtf_lines(mid, chrom, strand, exons, extra=""):
     return "".join("\t".join(r) + "\n" for r in rows)
 
 
-def run_tama(python2, tama_merge, filelist, prefix, wobble, tes_tol, ends, n_input):
+def run_tama(python2, tama_merge, filelist, prefix, wobble, tes_tol, n_input):
     # tama_merge prints errors to stdout and still exits 0
     log = prefix + ".log"
     with open(log, "w") as lf:
         subprocess.run([python2, tama_merge, "-f", filelist, "-p", prefix,
                         "-m", str(wobble), "-z", str(tes_tol),
-                        "-e", ends, "-d", "merge_dup"], check=True, stdout=lf, stderr=subprocess.STDOUT)
+                        "-d", "merge_dup"], check=True, stdout=lf, stderr=subprocess.STDOUT)
     with open(log) as lf:
         text = lf.read()
     if "Error" in text or "TAMA Merge has completed successfully" not in text:
@@ -139,7 +139,6 @@ def main():
     ap.add_argument("--reference", required=True)
     ap.add_argument("--junction-wobble", type=int, required=True)
     ap.add_argument("--tes-tol", type=int, required=True)
-    ap.add_argument("--ends", required=True, choices=["common_ends", "longest_ends"])
     ap.add_argument("--exclude-codes", required=True)
     ap.add_argument("--tama-merge", required=True)
     ap.add_argument("--python2", required=True)
@@ -192,7 +191,7 @@ def main():
     # merge with tama and read back the merged models and their members
     prefix = os.path.join(args.workdir, "tama")
     run_tama(args.python2, args.tama_merge, filelist, prefix, args.junction_wobble, args.tes_tol,
-             args.ends, len(novel))
+             len(novel))
 
     models = read_bed12(prefix + ".bed")
     members = read_members(prefix + "_trans_report.txt")
@@ -240,9 +239,9 @@ def main():
             out.write("%s\t%s\t1\t%d\t%s\n" % (r["transcript_id"], r["class_code"], len(r["tools"]), flags))
 
     print("* tama merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
-          "-> %d merged models (junctions +-%dbp, 3' +-%dbp, no_cap, %s) -> %s"
+          "-> %d merged models (junctions +-%dbp, 3' +-%dbp, no_cap) -> %s"
           % (len(candidates), len(mono), len(unstranded), len(novel), len(rows),
-             args.junction_wobble, args.tes_tol, args.ends, args.output))
+             args.junction_wobble, args.tes_tol, args.output))
 
 
 if __name__ == "__main__":

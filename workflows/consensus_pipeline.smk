@@ -75,8 +75,6 @@ rule reference_with_novel:
         --merged {input.merged} \
         --reference {input.ref} \
         --sqanti-classification {input.sqanti} \
-        --prefix NOVEL \
-        --source ONT \
         --exclude-codes '=,c' \
         --keep-list {input.keep} \
         --membership {input.member} \
@@ -120,14 +118,14 @@ rule sanity_genes:
         ref  = ref_gtf,
         cons = cons + "_merged_consensus.gtf",
         sqp  = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
+        sqr  = out_folder + "sqanti/" + data_code + "_filtering_reasons.txt",
         # the script is an input, so editing it re-runs this step
         script = "scripts/check_genes.py"
     output:
         tsv    = cons + "_sanity_genes.tsv",
         events = cons + "_sanity_genes.tsv.events.tsv"
     params:
-        union = cons + "_gffcmp.annotated.gtf",
-        sqr   = out_folder + "sqanti/" + data_code + "_filtering_reasons.txt"
+        union = cons + "_gffcmp.annotated.gtf"
     shell:
         """
         python {input.script} \
@@ -141,7 +139,7 @@ rule sanity_genes:
         --union-gtf {params.union} \
         --consensus-gtf {input.cons} \
         --sqanti-pass-ids {input.sqp} \
-        --sqanti-reasons {params.sqr} \
+        --sqanti-reasons {input.sqr} \
         -o {output.tsv}
         """
 

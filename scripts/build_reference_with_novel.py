@@ -3,15 +3,16 @@
 --exclude-codes, and in --keep-list), renamed <prefix>_NNNNNN with source <source>.
 
 The gene is SQANTI3's associated_gene; a SQANTI novelGene becomes a fresh <prefix>G_NNNNNN locus.
-When several genes are named, the gene of associated_transcript leads (a fusion: the first gene),
-the others go to bridging. --novel-only --no-rename writes the SQANTI input instead."""
+When several genes are named, the gene of associated_transcript leads (a fusion: the 5' gene on the
+model's strand), the others go to bridging. --novel-only --no-rename writes the SQANTI input instead."""
 import argparse
 import gzip
 import re
 from collections import namedtuple
 
 # one novel model as written out: new id, gene, reference gene of its gffcompare match, class code,
-# how the gene was assigned (SQANTI structural category or "unclassified"), further genes it bridges
+# how the gene was assigned (SQANTI structural category; a placeholder under --no-rename, which never
+# writes it), further genes it bridges
 NovelRecord = namedtuple("NovelRecord",
                          ["new_tid", "gene_id", "ref_gene", "class_code", "gene_assignment", "bridging"])
 # membership table: transcript_id, class_code, is_novel, then the per-tool columns carried into provenance
@@ -68,9 +69,16 @@ def main():
         with open(args.keep_list) as fh:
             keep = {line.strip() for line in fh if line.strip()}
 
-    # reference transcript (no version) -> gene id
-    tx2gene = {base(attr(c[8], "transcript_id")): attr(c[8], "gene_id")
-               for c in gtf_records(args.reference, ("transcript",))}
+    # reference transcript (no version) -> gene id, and gene id -> (lowest start, highest end) over its
+    # transcripts. the span shows which gene of a fusion lies 5'
+    tx2gene = {}
+    gene_span = {}
+    for c in gtf_records(args.reference, ("transcript",)):
+        gene = attr(c[8], "gene_id")
+        tx2gene[base(attr(c[8], "transcript_id"))] = gene
+        start, end = int(c[3]), int(c[4])
+        low, high = gene_span.get(gene, (start, end))
+        gene_span[gene] = (min(low, start), max(high, end))
 
     # SQANTI classification: isoform -> (structural category, associated gene, associated transcript)
     sq = {}
@@ -90,6 +98,7 @@ def main():
     order = []
     cc_of = {}
     ref_gene_of = {}
+    strand_of = {}
     for c in gtf_records(args.merged, ("transcript",)):
         cc = attr(c[8], "class_code")
         tid = attr(c[8], "transcript_id")
@@ -98,7 +107,8 @@ def main():
         order.append(tid)
         cc_of[tid] = cc
         ref_gene_of[tid] = tx2gene.get(base(attr(c[8], "cmp_ref"))) or "NA"
-    # gene id tama gave each kept model (used when SQANTI has no call)
+        strand_of[tid] = c[6]
+    # gene id tama gave each kept model (written as is under --no-rename)
     merged_gene = {}
     for c in gtf_records(args.merged, ("exon",)):
         tid = attr(c[8], "transcript_id")
@@ -108,22 +118,31 @@ def main():
     # SQANTI novelGene label -> fresh locus id, numbered in order of first use
     locus_ids = {}
 
+    def five_prime_gene(genes, strand):
+        # the gene that starts first in the model's reading direction: lowest gene start on the plus
+        # strand, highest gene end on the minus strand. SQANTI sorts genes by id, so a tie takes the
+        # lowest id. fusion partners share the model's strand (checked on v9: none differ)
+        if strand == "+":
+            return min(genes, key=lambda gene: gene_span[gene][0])
+        return max(genes, key=lambda gene: gene_span[gene][1])
+
     def place(tid):
-        # gene, assignment label and bridged genes of one model
-        category, assoc_gene, assoc_transcript = sq.get(tid, (None, None, None))
-        # no SQANTI call: keep tama's gene id
-        if assoc_gene is None:
-            return merged_gene.get(tid), "unclassified", []
+        # gene, assignment label and bridged genes of one model. every kept model has a SQANTI call, so
+        # a missing one stops the run here instead of keeping a gene nobody assigned
+        category, assoc_gene, assoc_transcript = sq[tid]
         # a SQANTI novel gene: one new locus id per novelGene label
         if assoc_gene.startswith("novelGene"):
             locus_ids.setdefault(assoc_gene, "%sG_%06d" % (args.prefix, len(locus_ids) + 1))
             return locus_ids[assoc_gene], category, []
-        # one or more known genes (joined by "_"): the gene of associated_transcript leads when it is one
-        # of them and the model is not a fusion; otherwise SQANTI's first gene leads. the rest are bridged
-        # genes
+        # one or more known genes (joined by "_"): a fusion is led by its 5' gene, any other model by the
+        # gene of associated_transcript when that is one of them, else by SQANTI's first gene. the rest
+        # are bridged genes
         genes = assoc_gene.split("_")
-        lead = tx2gene.get(base(assoc_transcript))
-        if category != "fusion" and lead in genes:
+        if category == "fusion":
+            lead = five_prime_gene(genes, strand_of[tid])
+        else:
+            lead = tx2gene.get(base(assoc_transcript))
+        if lead in genes:
             genes.insert(0, genes.pop(genes.index(lead)))
         return genes[0], category, genes[1:]
 
@@ -175,12 +194,14 @@ def main():
                          % (rec.ref_gene, rec.class_code, rec.gene_assignment, ",".join(rec.bridging)))
             out.write("\t".join(c) + "\n")
 
-    # summary: models on known genes (not a fresh <prefix>G_ locus) and models bridging a second gene
-    known = sum(1 for rec in tx_map.values() if not str(rec.gene_id).startswith(args.prefix + "G_"))
-    bridged = sum(1 for rec in tx_map.values() if rec.bridging)
-    print("* reference + %d novel transcripts: %d are isoforms of known genes, %d new loci "
-          "(sqanti novel genes), %d spanning a second gene (bridging); dropped codes: %s"
-          % (len(order), known, len(locus_ids), bridged, ",".join(sorted(drop))))
+    # summary: models on known genes (not a fresh <prefix>G_ locus) and models bridging a second gene.
+    # skipped under --no-rename, where no gene has been assigned yet
+    if not args.no_rename:
+        known = sum(1 for rec in tx_map.values() if not str(rec.gene_id).startswith(args.prefix + "G_"))
+        bridged = sum(1 for rec in tx_map.values() if rec.bridging)
+        print("* reference + %d novel transcripts: %d are isoforms of known genes, %d new loci "
+              "(sqanti novel genes), %d spanning a second gene (bridging); dropped codes: %s"
+              % (len(order), known, len(locus_ids), bridged, ",".join(sorted(drop))))
 
 
 if __name__ == "__main__":

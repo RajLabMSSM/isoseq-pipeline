@@ -168,9 +168,9 @@ def main():
             loc = "%s:%d-%d" % (ev["chrom"], ev["start"], ev["end"])
             # assembler that built it: the <tool>__ prefix of union ids, else the gtf source column
             tools = sorted({t.split("__")[0] if "__" in t else src.lower() for t, src in in_union[i].items()})
-            # consensus models carrying it that SQANTI kept or dropped (no pass list = all kept)
-            kept = [t for t in in_cons[i] if not passed or t in passed]
-            dropped = [t for t in in_cons[i] if passed and t not in passed]
+            # consensus models carrying it that SQANTI kept or dropped
+            kept = [t for t in in_cons[i] if t in passed]
+            dropped = [t for t in in_cons[i] if t not in passed]
             reasons = sorted({why[t] for t in dropped if t in why})
             # in the final gtf: via a novel model, a reference model, or both
             via_parts = []

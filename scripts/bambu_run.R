@@ -1,4 +1,4 @@
-# run bambu transcript discovery and quantification on one group of long-read bams (Chen et al. 2023)
+# run bambu transcript discovery and quantification on one group of long-read bams (Chen et al. 2023), optparse means you don't have to hardcode anything
 library(optparse)
 # point Bioconductor at the shared bambu config so it does not look for a per-user one
 options(BIOCONDUCTOR_CONFIG_FILE = "/sc/arion/projects/ad-omics/data/software/bambu/config.yaml")

@@ -1,4 +1,4 @@
-# turn the reference gtf into bambu's annotation object once, so each group's run can load it (Chen et al. 2023)
+# turn the reference gtf into bambu's annotation object once, so each group's run can load it (Chen et al. 2023), optparse means you don't have to hardcode anything
 library(optparse)
 # read the input gtf path and the output .RData path
 opt <- parse_args(OptionParser(option_list = list(

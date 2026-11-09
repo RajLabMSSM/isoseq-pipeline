@@ -23,7 +23,7 @@ rule stringtie_pool_short_bams:
 # and it can rest on short reads alone.
 # i'm not using -t so that i can see the HYOU1 exon-10 skip; using -t turns trimming OFF for the ends of a transcript where coverage falls,
 # so i'm not sure why it messes up HYOU1 despite great coverage in 1340 short reads and 10 long reads. oh well
-# --rf is off even though the short reads are stranded: it also sets the strand of unspliced long reads, wrongly
+# --rf is off because it forces strand to apply globally to short and long reads
 rule run_stringtie:
     input:
         gtf       = ref_gtf,

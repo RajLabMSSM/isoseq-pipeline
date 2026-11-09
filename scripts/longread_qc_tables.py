@@ -13,6 +13,7 @@ every NanoStat metric of every stage kept in its own table."""
 # read_length_hist.tsv.gz =	Histogram data showing the distribution of primary mapped read lengths for every sample
 # longread_qc_summary.tsv =	One row per sample containing the read counts, median lengths and yields that figures draw from
 # nanostat_all_metrics.tsv = One row per sample per stage holding every NanoStat metric, kept to look back at, not plotted
+# *_mqc.tsv = The panels of the MultiQC page (yields, read classification, before/after pychopper, before/after minimap2)
 
 
 import argparse
@@ -26,6 +27,15 @@ LOG2_BIN_WIDTH = 0.1
 LOG2_MAX = 18.0
 # longer reads are clipped just under the top edge so they land in the last bin
 LOG2_CLIP_TOP = 17.999
+
+# multiqc panels: one color per read stage (Okabe-Ito palette; Wong 2011), so a stage looks the same in every panel
+STAGE_LABELS = {"raw": ("Raw reads", "#E69F00"), "pychopper": ("After pychopper", "#0072B2"),
+                "aligned": ("Primary mapped reads", "#009E73")}
+# the four read classes pychopper assigns. in read units they add up to the raw reads of a library
+CLASS_LABELS = {"pychopper_primers_found": ("Primers at both ends", "#0072B2"),
+                "pychopper_rescued_reads": ("Rescued (fused reads)", "#56B4E9"),
+                "pychopper_unusable": ("Unusable", "#E69F00"),
+                "pychopper_quality_fail": ("Failed quality filter", "#CC79A7")}
 
 
 def sample_of(path, suffix):
@@ -59,6 +69,65 @@ def pychopper_counts(paths):
     return pd.DataFrame.from_dict(rows, orient="index")
 
 
+def write_bar_panel(path, panel_id, title, description, y_label, table, labels, grouped):
+    # one multiqc custom-content bar chart: settings in "#" lines, then the table. grouped = bars side by side, one per
+    # column; otherwise the columns stack and multiqc offers a counts / percentages switch
+    lines = [f"id: '{panel_id}'", "parent_id: 'longread_read_flow'", "parent_name: 'Long-read read flow'",
+             "parent_description: 'Reads kept at each processing step, one read counted once.'",
+             f"section_name: '{title}'", f"description: '{description}'", "plot_type: 'bargraph'",
+             "pconfig:", f"    id: '{panel_id}_plot'", f"    title: '{title}'", f"    ylab: '{y_label}'"]
+    if grouped:
+        lines += ["    cpswitch: false", "    stacking: 'group'"]
+    lines.append("categories:")
+    for column in table.columns:
+        name, color = labels[column]
+        lines.append(f"    {column}: {{name: '{name}', color: '{color}'}}")
+    with open(path, "w") as fh:
+        fh.write("".join(f"# {line}\n" for line in lines))
+        table.rename_axis("Sample").to_csv(fh, sep="\t")
+
+
+def write_multiqc_panels(out, prefix):
+    # the multiqc page reads these files, so its plots come from the same numbers as the summary table
+    table = out.set_index("sample").sort_index()
+
+    # yields as percentages, added as columns of the general statistics table at the top of the page
+    yields = pd.DataFrame({"full_length_pct": 100 * table["full_length_share"],
+                           "too_short_pct": 100 * table["pychopper_length_fail"] / table["number_of_reads_raw"],
+                           "retention_pct": 100 * table["pychopper_retention"],
+                           "mapping_pct": 100 * table["mapping_rate"],
+                           "end_to_end_pct": 100 * table["aligned_frac"]})
+    columns = {"full_length_pct": ("Full-length", "Raw reads with primers at both ends, before the length filter"),
+               "too_short_pct": ("Too short", "Sequences under 50 nt after trimming, as a percentage of raw reads"),
+               "retention_pct": ("Kept by pychopper", "Sequences given to minimap2 over raw reads"),
+               "mapping_pct": ("Mapped", "Primary mapped reads over sequences given to minimap2"),
+               "end_to_end_pct": ("Mapped of raw", "Primary mapped reads over raw reads")}
+    lines = ["id: 'longread_yields'", "plot_type: 'generalstats'", "headers:"]
+    for column, (title, description) in columns.items():
+        lines += [f"    {column}:", f"        title: '{title}'", f"        description: '{description}'",
+                  "        suffix: '%'", "        min: 0", "        max: 100", "        format: '{:,.1f}'"]
+    with open(prefix + "_longread_yields_mqc.tsv", "w") as fh:
+        fh.write("".join(f"# {line}\n" for line in lines))
+        yields.rename_axis("Sample").to_csv(fh, sep="\t")
+
+    # read classes in read units: replaces multiqc's own plot, which counts a rescued read once per segment
+    write_bar_panel(prefix + "_pychopper_classes_mqc.tsv", "pychopper_classes", "Pychopper read classes",
+                    "What pychopper found on each raw read. The four classes add up to the raw reads.", "Reads",
+                    table[list(CLASS_LABELS)], CLASS_LABELS, grouped=False)
+
+    # the two before/after comparisons, each as read counts and as median read length
+    for name, step, before, after in [("pychopper", "pychopper", "raw", "pychopper"),
+                                      ("minimap", "minimap2", "pychopper", "aligned")]:
+        for measure, y_label, unit in [("number_of_reads", "Reads", "reads"),
+                                       ("median_read_length", "Median read length (nt)", "lengths")]:
+            columns = {f"{measure}_{stage}": stage for stage in (before, after)}
+            labels = {column: STAGE_LABELS[stage] for column, stage in columns.items()}
+            write_bar_panel(f"{prefix}_{name}_{unit}_mqc.tsv", f"{name}_{unit}",
+                            f"{y_label.split(' (')[0]} before and after {step}",
+                            f"{y_label.split(' (')[0]} of each library before and after {step}.", y_label,
+                            table[list(columns)], labels, grouped=True)
+
+
 def main():
     # read the options
     ap = argparse.ArgumentParser(description=__doc__)
@@ -71,6 +140,7 @@ def main():
     ap.add_argument("--hist-out", required=True)                        # output is a histogram TSV
     ap.add_argument("--summary-out", required=True)                     # output is a QC summary TSV
     ap.add_argument("--nanostat-out", required=True)                    # output is the every-metric NanoStat TSV
+    ap.add_argument("--mqc-prefix", required=True)                      # path prefix of the MultiQC panel files
     args = ap.parse_args()
 
     # bin edges and bin midpoints of the log2 length histogram
@@ -122,6 +192,7 @@ def main():
     # filter. it is measured before the 50 nt length filter, so it can exceed pychopper_retention
     out["full_length_share"] = out["pychopper_primers_found"] / out["number_of_reads_raw"]
     out.sort_values("sample").to_csv(args.summary_out, sep="\t", index=False)
+    write_multiqc_panels(out, args.mqc_prefix)
 
 
 if __name__ == "__main__":

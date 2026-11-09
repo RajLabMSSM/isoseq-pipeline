@@ -1,0 +1,16 @@
+# settings for the long-read MultiQC page. the pipeline's own panels (the *_mqc.tsv files from longread_qc_tables.py)
+# replace two parts of MultiQC's pychopper module, which still uses pychopper's own percentage. that percentage counts a
+# rescued read once per segment and leaves out reads failing the quality filter.
+
+# drop the module's read classification plot; the panel "Pychopper read classes" shows the same classes in read units.
+# the module's strand orientation plot stays
+remove_sections:
+  - pychopper_classification
+
+# general statistics table: hide the two columns that the pipeline's columns replace, so each number appears once.
+# "Full-Length cDNA" uses pychopper's percentage. "Reads mapped" counts supplementary records, the pipeline's "Mapped" does not
+table_columns_visible:
+  Pychopper:
+    ftp: false
+  "Samtools: flagstat":
+    mapped_passed: false

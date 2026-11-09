@@ -5,6 +5,10 @@ qc_bam            = out_folder + "{sample}/alignment/{sample}.qc.bam"
 rrna              = out_folder + data_code + ".rRNA.interval_list"
 combined_junc_bed = out_folder + data_code + ".combined_junctions.bed"
 pychopper_stats   = expand(out_folder + "{sample}/pychopper/{sample}.stats.tsv", sample=samples)
+# the panels of the multiqc page, written by longread_qc_tables.py into the folder multiqc scans
+longread_mqc_panels = expand(out_folder + data_code + "_{panel}_mqc.tsv",
+                             panel=["longread_yields", "pychopper_classes", "pychopper_reads", "pychopper_lengths",
+                                    "minimap_reads", "minimap_lengths"])
 
 
 # raw long-read fastq of one sample, from the sample sheet
@@ -266,7 +270,10 @@ rule longread_qc_tables:
     output:
         hist    = out_folder + data_code + "_read_length_hist.tsv.gz",
         summary = out_folder + data_code + "_longread_qc_summary.tsv",
-        all_nanostat = out_folder + data_code + "_nanostat_all_metrics.tsv"
+        all_nanostat = out_folder + data_code + "_nanostat_all_metrics.tsv",
+        panels  = longread_mqc_panels
+    params:
+        mqc_prefix = out_folder + data_code
     shell:
         """
         python {input.script} \
@@ -278,18 +285,22 @@ rule longread_qc_tables:
         --pychopper {input.pyc} \
         --hist-out {output.hist} \
         --summary-out {output.summary} \
-        --nanostat-out {output.all_nanostat}
+        --nanostat-out {output.all_nanostat} \
+        --mqc-prefix {params.mqc_prefix}
         """
 
 
-# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset"
+# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset". the *_mqc.tsv panels add the read flow plots
+# and the yields; multiqc_config.yaml hides the parts of multiqc's own output that those replace
 rule multiQC:
     input:
         expand(out_folder + "{sample}/qc/{sample}.RNASeqMetrics", sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.metrics.tsv",   sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.flagstat.txt",  sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.idxstat.txt",   sample=samples),
-        pychopper_stats
+        pychopper_stats,
+        longread_mqc_panels,
+        settings = "scripts/multiqc_config.yaml"
     output:
         out_folder + "multiqc/multiqc_report.html"
     params:
@@ -298,5 +309,5 @@ rule multiQC:
         """
         export LC_ALL=en_US.UTF-8
         export LANG=en_US.UTF-8
-        {params.multiqc} -f -e nanostat --outdir {out_folder}multiqc/ {out_folder}
+        {params.multiqc} -f -e nanostat -c {input.settings} --outdir {out_folder}multiqc/ {out_folder}
         """

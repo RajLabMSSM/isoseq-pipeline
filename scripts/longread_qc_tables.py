@@ -2,6 +2,18 @@
 """Per-library long-read QC: a log2 read-length histogram of the aligned reads (bins of 0.1), and
 read counts, aligned fraction and median lengths from NanoStat plus the pychopper full-length share
 (Primers_found over all classified reads, as MultiQC defines it)."""
+
+# In simpler terms, the script answers four questions:
+# 1. How long are the aligned Nanopore reads?
+# 2. How many reads did each sample have before and after processing?
+# 3. What fraction of the original reads are represented in the aligned data?
+# 4. What fraction of reads were classified as full-length by Pychopper?
+
+# outputs:
+# read_length_hist.tsv.gz =	Histogram data showing the distribution of mapped read lengths for every sample
+# longread_qc_summary.tsv =	One row per sample containing read counts, median lengths, aligned fraction, and Pychopper full-length share
+
+
 import argparse
 import os
 
@@ -33,13 +45,13 @@ def nanostat(paths, suffix):
 def main():
     # read the options
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--metadata", required=True)
-    ap.add_argument("--read-lengths", nargs="+", required=True)
-    ap.add_argument("--nanostat-raw", nargs="+", required=True)
-    ap.add_argument("--nanostat-aligned", nargs="+", required=True)
-    ap.add_argument("--pychopper", nargs="+", required=True)
-    ap.add_argument("--hist-out", required=True)
-    ap.add_argument("--summary-out", required=True)
+    ap.add_argument("--metadata", required=True)                        # sample metadata TSV
+    ap.add_argument("--read-lengths", nargs="+", required=True)         # individual mapped-read lengths
+    ap.add_argument("--nanostat-raw", nargs="+", required=True)         # raw nanostat reports
+    ap.add_argument("--nanostat-aligned", nargs="+", required=True)     # aligned nanostat reports
+    ap.add_argument("--pychopper", nargs="+", required=True)            # pychopper classification stats
+    ap.add_argument("--hist-out", required=True)                        # output is a histogram TSV
+    ap.add_argument("--summary-out", required=True)                     # output is a QC summary TSV
     args = ap.parse_args()
 
     # bin edges and bin midpoints of the log2 length histogram

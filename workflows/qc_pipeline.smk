@@ -55,10 +55,10 @@ rule pychopper:
         mkdir -p {params.pdir}                                            # make output directory
         zcat -f {input.fastq} > {params.pre}.input.fastq                  # decompress input FASTQ
         pychopper -k {config[pychopper_kit]} -m edlib -t {threads} \
-        -r {params.pre}.report.pdf \                                      
+        -r {params.pre}.report.pdf \
         -u {params.pre}.unclassified.fastq \
         -w {params.pre}.rescued.fastq \
-        -S {params.pre}.stats.tsv \                                       
+        -S {params.pre}.stats.tsv \
         {params.pre}.input.fastq {params.pre}.primary.fastq
         cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}  # combines full-length and rescued FASTQs into one
         rm -f {params.pre}.input.fastq {params.pre}.primary.fastq {params.pre}.unclassified.fastq {params.pre}.rescued.fastq

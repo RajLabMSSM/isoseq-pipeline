@@ -21,8 +21,8 @@ rule stringtie_pool_short_bams:
 # hybrid assembly (Shumate et al. 2022): --mix reads the short-read bam first, the long-read bam second; -G guides it
 # with GENCODE. in this mode a novel model needs coverage 4.75 aka the average number of reads per base of a trasncript (the -s default), 
 # and it can rest on short reads alone.
-# -t is off so that i can see the HYOU1 exon-10 skip. normally -t trims the ends of a transcript where coverage falls,
-# so i'm not sure why it messes up HYOU1 despite great coverage in 1340 short reads and 10 long reads
+# i'm not using -t so that i can see the HYOU1 exon-10 skip; using -t turns trimming OFF for the ends of a transcript where coverage falls,
+# so i'm not sure why it messes up HYOU1 despite great coverage in 1340 short reads and 10 long reads. oh well
 # --rf is off even though the short reads are stranded: it also sets the strand of unspliced long reads, wrongly
 rule run_stringtie:
     input:

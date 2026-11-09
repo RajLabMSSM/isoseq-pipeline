@@ -1,10 +1,9 @@
-gffcompare = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"
-tama_merge = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
-python2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"
+gffcompare = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"     #Compare assembled transcripts with reference annotations
+tama_merge = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"                             # Merge transcript models with similar structures
+python2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"                              # Python interpreter used to run TAMA
 cons       = out_folder + "consensus/" + data_code
-# the two TDP-43 cryptic exons used as positive controls for recovery (hg38, 1-based exon coordinates)
 sanity_gene_list  = "STMN2,UNC13A"
-sanity_event_list = "STMN2:chr8:79616822-79617207,UNC13A:chr19:17642414-17642541"
+sanity_event_list = "STMN2:chr8:79616822-79617207,UNC13A:chr19:17642414-17642541"                       #1-based exon coordinates
 
 
 # the three assembler gtfs of one group, by tool

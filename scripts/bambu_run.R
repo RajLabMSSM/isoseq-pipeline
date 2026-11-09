@@ -25,7 +25,7 @@ genome <- Rsamtools::FaFile(opt$fasta)
 # no --NDR means NULL, which makes bambu use its own recommended NDR
 ndr <- if (is.null(opt$NDR)) NULL else as.numeric(opt$NDR)
     
-# one pooled bam per group, so pooling has already happened. NDR = novel discovery rate: the share of unannotated
+# one pooled bam per group, pooling already happened in the main Snakefile. NDR = novel discovery rate: the share of unannotated
 # models among all candidates ranked at or above a model's score (Chen et al. 2023). with one bam, ncore has no effect
 res <- bambu(reads = arguments$args, annotations = anno, genome = genome,
              NDR = ndr, ncore = as.numeric(opt$cores))

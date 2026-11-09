@@ -34,12 +34,6 @@ samtools_qc:
   time: 60
   queue: express
 
-rnaseqc:
-  cores: 4
-  mem: 16000
-  time: 120
-  queue: express
-
 # 120 min was too short for the deepest library
 picard:
   cores: 4

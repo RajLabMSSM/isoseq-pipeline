@@ -1,7 +1,5 @@
 # settings for the long-read MultiQC page. the pipeline's own panels (the *_mqc.tsv files from longread_qc_tables.py)
 # replace the parts of MultiQC's output that are built for short reads or that count differently from those panels.
-# the RNA-SeQC module is left off the page in the rule that runs multiqc (-e rna_seqc), because on long reads its
-# exonic rate, strand and read metrics do not mean what the RNA-SeQC manual describes.
 
 # picard names its samples after the input bam ("CTRL1.qc"); dropping ".qc" keeps one row per library in the tables
 extra_fn_clean_exts:

@@ -53,7 +53,7 @@ sample-name prefixes (`TDP_1` -> `TDP`).
 7. Cross-cohort: the cohorts' novels merged by `tama_merge` at the same tolerances, single-exon
    dropped, gene ids set by `cross_cohort_novel_genes.py` (`XNOVEL_*`, `XNOVELG_*` loci)
 
-QC: samtools, RNA-SeQC, Picard and pychopper into MultiQC 1.25.1; NanoStat in `<data_code>_longread_qc_summary.tsv`; plus `<data_code>_read_length_hist.tsv.gz`.
+QC: samtools, Picard and pychopper into MultiQC 1.25.1; NanoStat in `<data_code>_longread_qc_summary.tsv`; plus `<data_code>_read_length_hist.tsv.gz`.
 
 Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, `bambu_env`,
 `isoquant313`, `sqanti3_v6`, `tama_env` (Python 2), `multiqc`.

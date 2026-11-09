@@ -140,29 +140,6 @@ rule samtools_qc:
         """
 
 
-# rnaseqc gene / exon metrics. --unpaired counts single reads, which rnaseqc otherwise skips.
-# --mapping-quality 0 and --base-mismatch=1000 keep every aligned long read (nanopore reads carry many
-# mismatches, the short-read defaults would discard most of them); --detection-threshold=1 calls a
-# gene detected from 1 read; --coverage also writes per-transcript coverage
-rule rnaseqc:
-    input:
-        bam = qc_bam,
-        bai = qc_bam + ".bai",
-        gtf = genes_gtf
-    output:
-        out_folder + "{sample}/qc/{sample}.metrics.tsv"
-    params:
-        outdir = out_folder + "{sample}/qc/"
-    shell:
-        """
-        ml rnaseqc
-        rnaseqc {input.gtf} {input.bam} {params.outdir} \
-        --sample={wildcards.sample} \
-        --unpaired --coverage --verbose \
-        --mapping-quality 0 --base-mismatch=1000 --detection-threshold=1
-        """
-
-
 # read count and length statistics of the raw reads (before pychopper) - summary stats only
 rule nanostat_raw:
     input:
@@ -290,13 +267,11 @@ rule longread_qc_tables:
         """
 
 
-# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset". rna_seqc is excluded: on long reads its
-# exonic rate, strand and read metrics do not mean what its manual describes. the *_mqc.tsv panels add the read flow
+# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset". the *_mqc.tsv panels add the read flow
 # plots and the yields; multiqc_config.yaml hides the parts of multiqc's own output that those replace
 rule multiQC:
     input:
         expand(out_folder + "{sample}/qc/{sample}.RNASeqMetrics", sample=samples),
-        expand(out_folder + "{sample}/qc/{sample}.metrics.tsv",   sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.flagstat.txt",  sample=samples),
         expand(out_folder + "{sample}/qc/{sample}.idxstat.txt",   sample=samples),
         pychopper_stats,
@@ -310,5 +285,5 @@ rule multiQC:
         """
         export LC_ALL=en_US.UTF-8
         export LANG=en_US.UTF-8
-        {params.multiqc} -f -e nanostat -e rna_seqc -c {input.settings} --outdir {out_folder}multiqc/ {out_folder}
+        {params.multiqc} -f -e nanostat -c {input.settings} --outdir {out_folder}multiqc/ {out_folder}
         """

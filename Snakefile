@@ -16,7 +16,6 @@ data_code       = config['data_code']
 out_folder      = config['out_folder'] + config['run_code'] + "/"
 genome          = config['ref_genome'] + ".fa"
 ref_gtf         = out_folder + data_code + ".reference_annotation.gtf"
-genes_gtf       = out_folder + data_code + ".genes.gtf"
 junction_folder = config['junction_folder']
 excluded_samples = set(x for x in config.get('exclude_samples', '').split(',') if x)
 
@@ -80,15 +79,6 @@ rule decompress_ref_gtf:
         config['ref_gtf']
     output:
         temp(ref_gtf)
-    shell:
-        "gunzip -c {input} > {output}"
-
-
-rule prepare_genes_gtf:
-    input:
-        config['genes_gtf']
-    output:
-        temp(genes_gtf)
     shell:
         "gunzip -c {input} > {output}"
 

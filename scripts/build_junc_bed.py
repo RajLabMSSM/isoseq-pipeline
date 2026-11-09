@@ -29,7 +29,7 @@ def main():
     ap.add_argument("--sj_folder", required=True) # directory containing STAR junction files
     ap.add_argument("--min_uniq", type=int, default=2) # minimum total uniquely mapped read support
     ap.add_argument("--canonical_only", action="store_true") # keep only junctions with canonical/semi canonical motif evidence
-    ap.add_argument("--exclude_samples", default="") # a file with comma-separated sample IDs to exclude
+    ap.add_argument("--exclude_samples", default="") # comma-separated sample IDs to exclude
     ap.add_argument("-o", "--out", required=True) # path to output BED file
     args = ap.parse_args()
 

@@ -1,8 +1,4 @@
-# isoquant discovery on the pooled long-read bam of one group (Prjibelski et al. 2023). with one bam per
-# group its replica filter does not apply. no short reads: --illumina_bam only reaches reads outside annotated
-# genes (alignment_processor.py process_intergenic). --clean_start stops isoquant reusing another group's
-# converted gene database. --large_output none skips the large per-read assignment table, which nothing reads.
-# after the run the converted gene database (*.db) is deleted to save space
+# isoquant discovery on the pooled long-read bam of one group (Prjibelski et al. 2023)
 rule run_isoquant:
     input:
         bams = lambda wc: pooled_bam(wc.group),
@@ -15,6 +11,11 @@ rule run_isoquant:
         outdir = out_folder + "isoquant/{group}/",
         prefix = data_code + "_{group}"
     threads: 8
+# no short reads: --illumina_bam only reaches reads outside annotated genes (alignment_processor.py process_intergenic). 
+# --clean_start = starts without reusing previous IsoQuant run state
+# --large_output = disables large optional output files
+# --model_construction_strategy	= controls how transcript models are constructed
+# after the run the converted gene database (*.db) is deleted to save space
     shell:
         """
         conda activate isoquant313

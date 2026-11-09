@@ -1,16 +1,23 @@
 # settings for the long-read MultiQC page. the pipeline's own panels (the *_mqc.tsv files from longread_qc_tables.py)
-# replace two parts of MultiQC's pychopper module, which still uses pychopper's own percentage. that percentage counts a
-# rescued read once per segment and leaves out reads failing the quality filter.
+# replace the parts of MultiQC's output that are built for short reads or that count differently from those panels.
+# the RNA-SeQC module is left off the page in the rule that runs multiqc (-e rna_seqc), because on long reads its
+# exonic rate, strand and read metrics do not mean what the RNA-SeQC manual describes.
 
-# drop the module's read classification plot; the panel "Pychopper read classes" shows the same classes in read units.
-# the module's strand orientation plot stays
+# picard names its samples after the input bam ("CTRL1.qc"); dropping ".qc" keeps one row per library in the tables
+extra_fn_clean_exts:
+  - ".qc"
+
 remove_sections:
+  # pychopper's classification plot counts a rescued read once per segment; the panel "Pychopper read classes" shows
+  # the same classes in read units. the module's strand orientation plot stays
   - pychopper_classification
+  # flagstat: every paired-end field is 0 on long reads, and "mapped" counts supplementary records, so it is a count of
+  # alignment records, not of reads. the read flow panels give reads
+  - samtools-flagstat
 
-# general statistics table: hide the two columns that the pipeline's columns replace, so each number appears once.
-# "Full-Length cDNA" uses pychopper's percentage. "Reads mapped" counts supplementary records, the pipeline's "Mapped" does not
+# general statistics table: hide the columns the pipeline's own columns replace, so each number appears once.
+# "Full-Length cDNA" uses pychopper's percentage, which leaves out reads failing the quality filter
 table_columns_visible:
   Pychopper:
     ftp: false
-  "Samtools: flagstat":
-    mapped_passed: false
+  "Samtools: flagstat": false

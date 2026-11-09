@@ -290,8 +290,9 @@ rule longread_qc_tables:
         """
 
 
-# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset". the *_mqc.tsv panels add the read flow plots
-# and the yields; multiqc_config.yaml hides the parts of multiqc's own output that those replace
+# nanostat is excluded: multiqc names every NanoStat --tsv report "dataset". rna_seqc is excluded: on long reads its
+# exonic rate, strand and read metrics do not mean what its manual describes. the *_mqc.tsv panels add the read flow
+# plots and the yields; multiqc_config.yaml hides the parts of multiqc's own output that those replace
 rule multiQC:
     input:
         expand(out_folder + "{sample}/qc/{sample}.RNASeqMetrics", sample=samples),
@@ -309,5 +310,5 @@ rule multiQC:
         """
         export LC_ALL=en_US.UTF-8
         export LANG=en_US.UTF-8
-        {params.multiqc} -f -e nanostat -c {input.settings} --outdir {out_folder}multiqc/ {out_folder}
+        {params.multiqc} -f -e nanostat -e rna_seqc -c {input.settings} --outdir {out_folder}multiqc/ {out_folder}
         """

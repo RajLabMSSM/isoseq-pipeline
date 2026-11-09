@@ -23,6 +23,7 @@ excluded_samples = set(x for x in config.get('exclude_samples', '').split(',') i
 # sample sheet: one row per sample with its long-read fastq and short-read bam
 metaDF        = pd.read_csv(config['metadata'], sep='\t')
 samples       = metaDF['sample'].astype(str).tolist()
+
 # lookup sample -> {column: value}, used by the input functions of the workflows
 metadata_dict = metaDF.set_index("sample").to_dict(orient="index")
 
@@ -43,7 +44,7 @@ def pooled_bam(group):
     return out_folder + "pooled/" + data_code + "_%s.pooled.bam" % group
 
 
-# pooled short-read bam of one group (stringtie --mix)
+# pooled short-read bam of one group (only used for stringtie --mix)
 def short_bam(group):
     return out_folder + "stringtie3/%s/%s_%s.pooled.short.bam" % (group, data_code, group)
 

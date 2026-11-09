@@ -8,6 +8,7 @@ from collections import defaultdict
 
 # STAR SJ.out.tab strand code -> bed strand
 STRAND = {"1": "+", "2": "-", "0": "."}
+
 # bed score column must be 0-1000, so the summed read count is capped there
 BED_MAX_SCORE = 1000
 

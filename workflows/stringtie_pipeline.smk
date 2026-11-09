@@ -1,6 +1,5 @@
 stringtie = "/sc/arion/projects/ad-omics/data/software/stringtie-3.0.3.Linux_x86_64/stringtie"
 
-
 # pool the short-read bams of one group for stringtie --mix. a library in
 # exclude_samples stays out of the pool, even when its long reads are used (tdpkd CTRL4: long reads in,
 # short reads out), so the same short-read libraries feed the hints, this pool and the SQANTI coverage
@@ -20,9 +19,11 @@ rule stringtie_pool_short_bams:
 
 
 # hybrid assembly (Shumate et al. 2022): --mix reads the short-read bam first, the long-read bam second; -G guides it
-# with GENCODE. in this mode a novel model needs coverage 4.75 (the -s default), and it can rest on short reads alone.
-# -t is off: with it the HYOU1 exon-10 skip is lost (it has 1,340 short and 10 long reads). --rf is off even though
-# the short reads are stranded: it also sets the strand of unspliced long reads, wrongly
+# with GENCODE. in this mode a novel model needs coverage 4.75 aka the average number of reads per base of a trasncript (the -s default), 
+# and it can rest on short reads alone.
+# -t is off so that i can see the HYOU1 exon-10 skip. normally -t trims the ends of a transcript where coverage falls,
+# so i'm not sure why it messes up HYOU1 despite great coverage in 1340 short reads and 10 long reads
+# --rf is off even though the short reads are stranded: it also sets the strand of unspliced long reads, wrongly
 rule run_stringtie:
     input:
         gtf       = ref_gtf,

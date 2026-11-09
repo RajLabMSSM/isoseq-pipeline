@@ -159,7 +159,7 @@ rule rnaseqc:
         """
 
 
-# read count and length statistics of the raw reads (before pychopper)
+# read count and length statistics of the raw reads (before pychopper) - summary stats only
 rule nanostat_raw:
     input:
         reads = raw_fastq
@@ -170,7 +170,7 @@ rule nanostat_raw:
         "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
 
 
-# the same statistics over the mapped records of the alignment
+# the same statistics over the mapped records of the alignment - summary stats only
 rule nanostat_aligned:
     input:
         bam = qc_bam,
@@ -226,7 +226,7 @@ rule picard:
 
 
 # length of every mapped record, for the read-length histogram (-F 4 drops only unmapped records;
-# supplementary records stay in)
+# supplementary records stay in) - indiviual sequence lengths for mapped alignments
 rule read_lengths:
     input:
         qc_bam

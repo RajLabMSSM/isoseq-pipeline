@@ -13,7 +13,7 @@ rule run_isoquant:
     threads: 8
 # --clean_start = starts without reusing previous IsoQuant run state
 # --large_output = disables large optional output files
-# --model_construction_strategy	= controls how transcript models are constructed
+# --model_construction_strategy	= controls how transcript models are constructed (ex: default_ont vs sensitive_ont)
 # after the run the converted gene database (*.db) is deleted to save space
     shell:
         """

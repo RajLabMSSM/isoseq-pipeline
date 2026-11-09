@@ -170,6 +170,18 @@ rule nanostat_raw:
         "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
 
 
+# the same statistics over the reads pychopper kept (the fastq that goes to minimap2), the middle stage of the
+# read counts: raw -> after pychopper -> after minimap2
+rule nanostat_pychopper:
+    input:
+        reads = out_folder + "{sample}/pychopper/{sample}.full_length.fastq"
+    output:
+        out_folder + "{sample}/qc/{sample}.nanostat.pychopper.tsv"
+    threads: 4
+    shell:
+        "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
+
+
 # the same statistics over the primary mapped reads (--no_supplementary, so one record per read) - summary stats only
 rule nanostat_aligned:
     input:
@@ -240,11 +252,12 @@ rule read_lengths:
         """
 
 
-# per-cohort qc tables: read-length histogram and the per-sample summary
+# per-cohort qc tables: read-length histogram, the per-sample summary and every NanoStat metric at the three stages
 rule longread_qc_tables:
     input:
         lengths = expand(out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt", sample=samples),
         raw     = expand(out_folder + "{sample}/qc/{sample}.nanostat.raw.tsv",       sample=samples),
+        chopped = expand(out_folder + "{sample}/qc/{sample}.nanostat.pychopper.tsv", sample=samples),
         aligned = expand(out_folder + "{sample}/qc/{sample}.nanostat.aligned.tsv",   sample=samples),
         pyc     = pychopper_stats,
         # the sample sheet and the script are inputs, so editing either redoes the qc tables
@@ -252,17 +265,20 @@ rule longread_qc_tables:
         script  = "scripts/longread_qc_tables.py"
     output:
         hist    = out_folder + data_code + "_read_length_hist.tsv.gz",
-        summary = out_folder + data_code + "_longread_qc_summary.tsv"
+        summary = out_folder + data_code + "_longread_qc_summary.tsv",
+        all_nanostat = out_folder + data_code + "_nanostat_all_metrics.tsv"
     shell:
         """
         python {input.script} \
         --metadata {input.metadata} \
         --read-lengths {input.lengths} \
         --nanostat-raw {input.raw} \
+        --nanostat-pychopper {input.chopped} \
         --nanostat-aligned {input.aligned} \
         --pychopper {input.pyc} \
         --hist-out {output.hist} \
-        --summary-out {output.summary}
+        --summary-out {output.summary} \
+        --nanostat-out {output.all_nanostat}
         """
 
 

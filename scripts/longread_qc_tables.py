@@ -75,7 +75,7 @@ def main():
                         "number_of_reads_aligned": aln.loc[raw.index, "number_of_reads"].to_numpy(),
                         "median_read_length_raw": raw["median_read_length"].to_numpy(),
                         "median_read_length_aligned": aln.loc[raw.index, "median_read_length"].to_numpy()})
-    # aligned_frac = mapped records of the alignment (supplementary records included) over the raw reads
+    # aligned_frac = primary mapped reads (one record per read, no supplementary) over the raw reads
     # before pychopper, so it folds the pychopper loss into the alignment rate
     out.insert(4, "aligned_frac", out["number_of_reads_aligned"] / out["number_of_reads_raw"])
     # pychopper full-length share = reads with both primers found over all classified reads

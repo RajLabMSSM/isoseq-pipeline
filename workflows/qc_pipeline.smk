@@ -170,7 +170,7 @@ rule nanostat_raw:
         "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
 
 
-# the same statistics over the mapped records of the alignment - summary stats only
+# the same statistics over the primary mapped reads (--no_supplementary, so one record per read) - summary stats only
 rule nanostat_aligned:
     input:
         bam = qc_bam,
@@ -179,7 +179,7 @@ rule nanostat_aligned:
         out_folder + "{sample}/qc/{sample}.nanostat.aligned.tsv"
     threads: 4
     shell:
-        "NanoStat --bam {input.bam} --tsv -t {threads} > {output}"
+        "NanoStat --bam {input.bam} --no_supplementary --tsv -t {threads} > {output}"
 
 
 # rRNA interval list for picard: the awk keeps the gene lines whose gene_type is rRNA,
@@ -225,8 +225,8 @@ rule picard:
         """
 
 
-# length of every mapped record, for the read-length histogram (-F 4 drops only unmapped records;
-# supplementary records stay in) - indiviual sequence lengths for mapped alignments
+# length of every primary mapped read, for the read-length histogram (-F 2308 drops unmapped, secondary and
+# supplementary records, so each read is counted once at its full trimmed length)
 rule read_lengths:
     input:
         qc_bam
@@ -236,7 +236,7 @@ rule read_lengths:
         """
         ml samtools
         ml bioawk
-        samtools view -F 4 {input} | bioawk -c sam '{{print length($seq)}}' > {output}
+        samtools view -F 2308 {input} | bioawk -c sam '{{print length($seq)}}' > {output}
         """
 
 

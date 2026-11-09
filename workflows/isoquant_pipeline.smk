@@ -11,7 +11,6 @@ rule run_isoquant:
         outdir = out_folder + "isoquant/{group}/",
         prefix = data_code + "_{group}"
     threads: 8
-# no short reads: --illumina_bam only reaches reads outside annotated genes (alignment_processor.py process_intergenic). 
 # --clean_start = starts without reusing previous IsoQuant run state
 # --large_output = disables large optional output files
 # --model_construction_strategy	= controls how transcript models are constructed

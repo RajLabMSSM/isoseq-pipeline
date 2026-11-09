@@ -41,7 +41,7 @@ sample-name prefixes (`TDP_1` -> `TDP`).
 3. Long-read alignments are merged per group with `samtools merge`, the short-read STAR alignments
    likewise. Per group, on the pooled long-read BAM:
    - StringTie 3.0.3 `--mix -G` (pooled short-read BAM first; no `-t`)
-   - IsoQuant 3.13.0 `default_ont`, `--complete_genedb --clean_start --large_output none`, long reads only
+   - IsoQuant 3.13.0 `sensitive_ont`, `--complete_genedb --clean_start --large_output none`, long reads only
    - Bambu 3.12.1, NDR 0.5, default discovery gates
 4. Union of tool x group models; models in GENCODE (`=`, `c`), single-exon and unstranded models
    dropped; `tama_merge -m 0 -z 100 -d merge_dup`, one `no_cap` source per tool and

@@ -38,7 +38,7 @@ rule build_junc_bed:
 
 # pychopper finds the cDNA primers of the kit (-k) at both read ends (-m edlib alignment), orients
 # each read to the transcript strand and trims the primers. kept = reads with both primers (primary)
-# plus reads rescued from fused molecules (-w); unclassified reads (-u) are deleted. 
+# plus reads rescued from fused molecules (-w); unclassified reads where there is no valid primer arrangement (-u) are deleted. 
 rule pychopper:
     input:
         fastq = raw_fastq
@@ -52,15 +52,15 @@ rule pychopper:
     shell:
         """
         conda activate pychopper_env
-        mkdir -p {params.pdir}
-        zcat -f {input.fastq} > {params.pre}.input.fastq
+        mkdir -p {params.pdir}                                            # make output directory
+        zcat -f {input.fastq} > {params.pre}.input.fastq                  # decompress input FASTQ
         pychopper -k {config[pychopper_kit]} -m edlib -t {threads} \
-        -r {params.pre}.report.pdf \
+        -r {params.pre}.report.pdf \                                      # output PDF report
         -u {params.pre}.unclassified.fastq \
         -w {params.pre}.rescued.fastq \
-        -S {params.pre}.stats.tsv \
+        -S {params.pre}.stats.tsv \                                       # output statistics TSV
         {params.pre}.input.fastq {params.pre}.primary.fastq
-        cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}
+        cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}  # combines full-length and rescued FASTQs into one
         rm -f {params.pre}.input.fastq {params.pre}.primary.fastq {params.pre}.unclassified.fastq {params.pre}.rescued.fastq
         """
 

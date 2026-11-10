@@ -2,8 +2,10 @@
 """Sanity check of the final reference.
 
 <out>             per gene: in_reference, total and novel isoform counts
-<out>.events.tsv  per diagnostic event, traced through union -> consensus -> SQANTI -> final gtf.
-                  Events are exons, GENE:chrom:start-end (1-based). RECOVERED needs an assembler
+<out>.events.tsv  per diagnostic event, the isoforms of the final gtf (GENCODE plus the novels that passed
+                  SQANTI) that carry it, traced through union -> consensus -> SQANTI -> final gtf.
+                  Events are junctions, GENE:chrom:start-end (first and last intron base, 1-based); several
+                  junctions joined by + must all be in one isoform. RECOVERED needs an assembler
                   to have built it, since the final gtf holds the whole reference."""
 import argparse
 import gzip
@@ -31,15 +33,19 @@ def base(g):
 
 
 def parse_events(spec):
-    # "GENE:chrom:start-end,..." -> list of event dicts; empty items are skipped
+    # "GENE:chrom:start-end+start-end,..." -> list of event dicts; empty items are skipped
     events = []
     items = [x.strip() for x in spec.split(",")]
     for item in items:
         if not item:
             continue
-        parts = item.split(":")
-        start, end = parts[2].split("-")
-        events.append({"gene": parts[0], "chrom": parts[1], "start": int(start), "end": int(end)})
+        gene, chrom, joined = item.split(":")
+        # one (start, end) per junction; a cryptic exon inside an intron has one junction on each side
+        junctions = []
+        for junction in joined.split("+"):
+            start, end = junction.split("-")
+            junctions.append((int(start), int(end)))
+        events.append({"gene": gene, "chrom": chrom, "junctions": junctions, "label": chrom + ":" + joined})
     return events
 
 
@@ -48,8 +54,8 @@ def event_hits(path, events, tol):
     # one window per chromosome spanning all of its events plus the pad
     windows = {}
     for ev in events:
-        lo = ev["start"] - WINDOW_PAD
-        hi = ev["end"] + WINDOW_PAD
+        lo = min(start for start, end in ev["junctions"]) - WINDOW_PAD
+        hi = max(end for start, end in ev["junctions"]) + WINDOW_PAD
         w = windows.get(ev["chrom"])
         if w:
             windows[ev["chrom"]] = (min(w[0], lo), max(w[1], hi))
@@ -68,12 +74,16 @@ def event_hits(path, events, tol):
                 continue
             t = tx.setdefault(attr(c[8], "transcript_id") or "?", {"chrom": c[0], "source": c[1], "exons": []})
             t["exons"].append((s, e))
-    # a transcript carries an event when one of its exons matches both event ends within tol
+    # a transcript carries an event when it has every junction of the event, both ends within tol
     hits = [{} for _ in events]
     for tid, t in tx.items():
+        exons = sorted(t["exons"])
+        # the intron between two neighboring exons runs from one exon's end + 1 to the next exon's start - 1
+        introns = [(left[1] + 1, right[0] - 1) for left, right in zip(exons, exons[1:])]
         for i, ev in enumerate(events):
-            if t["chrom"] == ev["chrom"] and any(
-                    abs(a - ev["start"]) <= tol and abs(b - ev["end"]) <= tol for a, b in t["exons"]):
+            if t["chrom"] == ev["chrom"] and all(
+                    any(abs(a - start) <= tol and abs(b - end) <= tol for a, b in introns)
+                    for start, end in ev["junctions"]):
                 hits[i][tid] = t["source"]
     return hits
 
@@ -159,13 +169,13 @@ def main():
     # event trace: one row per event, with the stage at which it was lost (or RECOVERED)
     epath = args.output + ".events.tsv"
     header = ["gene", "event", "in_gencode", "assembled_by", "n_consensus", "sqanti_kept", "sqanti_dropped",
-              "drop_reason", "in_final_gtf", "final_via", "verdict"]
+              "drop_reason", "in_final_gtf", "final_via", "final_isoforms", "verdict"]
     # echoed to the log after writing: gene, event, verdict of each row (header included)
     log_rows = [(header[0], header[1], header[-1])]
     with open(epath, "w") as out:
         out.write("\t".join(header) + "\n")
         for i, ev in enumerate(events):
-            loc = "%s:%d-%d" % (ev["chrom"], ev["start"], ev["end"])
+            loc = ev["label"]
             # assembler that built it: the <tool>__ prefix of union ids, else the gtf source column
             tools = sorted({t.split("__")[0] if "__" in t else src.lower() for t, src in in_union[i].items()})
             # consensus models carrying it that SQANTI kept or dropped
@@ -187,10 +197,12 @@ def main():
                 verdict = "LOST_AT_SQANTI"
             else:
                 verdict = "LOST_AT_CONSENSUS"
-            out.write("%s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n" % (
+            # the ids of the isoforms after SQANTI that carry the event
+            final_ids = ",".join(sorted(in_final[i])) or "-"
+            out.write("%s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n" % (
                 ev["gene"], loc, "yes" if in_ref[i] else "no", ",".join(tools) or "-",
                 len(in_cons[i]), len(kept), len(dropped), ";".join(reasons) or "-",
-                "yes" if in_final[i] else "no", via, verdict))
+                "yes" if in_final[i] else "no", via, final_ids, verdict))
             log_rows.append((ev["gene"], loc, verdict))
 
     print("* event trace -> %s" % epath)

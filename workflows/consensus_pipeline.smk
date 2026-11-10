@@ -2,8 +2,18 @@ gffcompare = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux
 tama_merge = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"                             # Merge transcript models with similar structures
 python2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"                              # Python interpreter used to run TAMA
 cons       = out_folder + "consensus/" + data_code
-sanity_gene_list  = "STMN2,UNC13A"
-sanity_event_list = "STMN2:chr8:79616822-79617207,UNC13A:chr19:17642414-17642541"                       #1-based exon coordinates
+# the six TDP-43 positive controls, each as its junction: chrom, then the first and last base of the intron (hg38, 1-based).
+# + joins junctions that one isoform must carry together.
+# knockdown events (Brown 2022): UNC13A cryptic exon, one junction on each side; STMN2 cryptic exon, only its upstream
+# junction because the exon ends the transcript; KCNQ2 exon 5 skip (also Joseph 2025).
+# overexpression events (Carmen-Orozco 2024): HYOU1 exon 10, NUP93 exon 20 and XPNPEP1 exon 8 skips.
+sanity_gene_list  = "UNC13A,STMN2,KCNQ2,HYOU1,NUP93,XPNPEP1"
+sanity_event_list = ("UNC13A:chr19:17641557-17642413+17642542-17642844,"
+                     "STMN2:chr8:79611215-79616821,"
+                     "KCNQ2:chr20:63439709-63444658,"
+                     "HYOU1:chr11:119052173-119052636,"
+                     "NUP93:chr16:56839070-56841704,"
+                     "XPNPEP1:chr10:109884149-109888048")
 
 
 # the three assembler gtfs of one group, by tool
@@ -108,9 +118,11 @@ rule compress_reference_gtf:
         "gzip -nc {input.gtf} > {output.gz}"
 
 
-# traces the STMN2 and UNC13A cryptic exons through union -> consensus -> SQANTI -> final gtf, to show
-# where a known event is kept or lost. An annotated event scores 0 novel, so novel counts alone are not a
-# recovery test
+# finds the isoforms after SQANTI (GENCODE plus the novels that passed) that carry each control junction, and traces
+# each event through union -> consensus -> SQANTI -> final gtf to show where it is kept or lost.
+# STMN2, KCNQ2, NUP93 and XPNPEP1 are in GENCODE v50, so they always match in the final gtf: for those,
+# assembled_by shows whether our data built the event. An annotated event scores 0 novel, so novel counts alone
+# are not a recovery test
 rule sanity_genes:
     input:
         gtf  = cons + ".isoforms.gtf",

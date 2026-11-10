@@ -58,6 +58,7 @@ def main():
                     junc[key][1] = "canonical"
 
     # filters to keep only introns with enough unique reads (and a canonical motif when asked) as bed6 lines
+    # the >= 2 unique reads + canonical filter is our own choice, not taken from a paper
     # each BED6 entry represents a single intron with 6 columns (chromosome, start, end, name, supporting read count, strand)
     short_read_lines = []
     for (chrom, start, end, strand), (uniq, motif) in junc.items():

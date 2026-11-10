@@ -4,6 +4,8 @@
 # picard names its samples after the input bam ("CTRL1.qc"); dropping ".qc" keeps one row per library in the tables
 extra_fn_clean_exts:
   - ".qc"
+  # samtools_qc writes <sample>.idxstat.txt; without this the idxstats table says CTRL1.idxstat instead of CTRL1
+  - ".idxstat"
 
 remove_sections:
   # pychopper's classification plot counts a rescued read once per segment; the panel "Pychopper read classes" shows

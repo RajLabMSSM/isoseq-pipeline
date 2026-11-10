@@ -42,7 +42,7 @@ rule build_junc_bed:
 
 # pychopper finds the cDNA primers of the kit (-k) at both read ends (-m edlib alignment), orients
 # each read to the transcript strand and trims the primers. kept = reads with both primers (primary)
-# plus reads rescued from fused molecules (-w); unclassified reads where there is no valid primer arrangement (-u) are deleted. 
+# plus reads rescued from fused molecules (-w); reads with no valid primer arrangement are not written to any file.
 rule pychopper:
     input:
         fastq = raw_fastq
@@ -50,22 +50,19 @@ rule pychopper:
         fl    = temp(out_folder + "{sample}/pychopper/{sample}.full_length.fastq"),
         stats = out_folder + "{sample}/pychopper/{sample}.stats.tsv"
     params:
-        pdir = out_folder + "{sample}/pychopper",
         pre  = out_folder + "{sample}/pychopper/{sample}"
     threads: 8
     shell:
         """
         conda activate pychopper_env
-        mkdir -p {params.pdir}                                            # make output directory
         zcat -f {input.fastq} > {params.pre}.input.fastq                  # decompress input FASTQ
         pychopper -k {config[pychopper_kit]} -m edlib -t {threads} \
         -r {params.pre}.report.pdf \
-        -u {params.pre}.unclassified.fastq \
         -w {params.pre}.rescued.fastq \
         -S {params.pre}.stats.tsv \
         {params.pre}.input.fastq {params.pre}.primary.fastq
         cat {params.pre}.primary.fastq {params.pre}.rescued.fastq > {output.fl}  # combines full-length and rescued FASTQs into one
-        rm -f {params.pre}.input.fastq {params.pre}.primary.fastq {params.pre}.unclassified.fastq {params.pre}.rescued.fastq
+        rm -f {params.pre}.input.fastq {params.pre}.primary.fastq {params.pre}.rescued.fastq
         """
 
 
@@ -177,10 +174,12 @@ rule nanostat_aligned:
 
 # rRNA interval list for picard: the awk keeps the gene lines whose gene_type is rRNA,
 # rRNA_pseudogene or Mt_rRNA and prints them as bed (0-based start, gene_id as the name, strand);
-# picard turns the bed into an interval list against the genome's sequence dictionary
+# picard turns the bed into an interval list against the genome's sequence dictionary.
+# the gtf is read straight from the gzipped GENCODE file: the decompressed copy is temporary, and depending on it
+# would redo this rule and all the qc after it whenever the assemblers re-create that copy
 rule rrna_intervals:
     input:
-        gtf    = ref_gtf,
+        gtf    = config['ref_gtf'],
         genome = genome
     output:
         rrna
@@ -190,7 +189,8 @@ rule rrna_intervals:
     shell:
         """
         ml picard
-        awk -F'\\t' -v OFS='\\t' '$3 == "gene" && $9 ~ /gene_type "(rRNA|rRNA_pseudogene|Mt_rRNA)"/ {{ match($9, /gene_id "[^"]+"/); print $1, $4 - 1, $5, substr($9, RSTART + 9, RLENGTH - 10), 0, $7 }}' {input.gtf} > {params.bed}
+        zcat {input.gtf} | awk -F'\\t' -v OFS='\\t' '$3 == "gene" && $9 ~ /gene_type "(rRNA|rRNA_pseudogene|Mt_rRNA)"/ {{ match($9, /gene_id "[^"]+"/); print $1, $4 - 1, $5, substr($9, RSTART + 9, RLENGTH - 10), 0, $7 }}' > {params.bed}
+        rm -f {params.dict}                                               # picard will not overwrite a dictionary left by a failed attempt
         java -jar $PICARD CreateSequenceDictionary R={input.genome} O={params.dict}
         java -jar $PICARD BedToIntervalList I={params.bed} O={output} SD={params.dict}
         rm -f {params.bed} {params.dict}
@@ -219,7 +219,7 @@ rule picard:
 
 
 # length of every primary mapped read, for the read-length histogram (-F 2308 drops unmapped, secondary and
-# supplementary records, so each read is counted once at its full trimmed length)
+# supplementary records, so each read is counted once at its full trimmed length). column 10 of a sam record is the read sequence
 rule read_lengths:
     input:
         qc_bam
@@ -227,9 +227,7 @@ rule read_lengths:
         out_folder + "{sample}/qc/{sample}.mapped.readlengths.txt"
     shell:
         """
-        ml samtools
-        ml bioawk
-        samtools view -F 2308 {input} | bioawk -c sam '{{print length($seq)}}' > {output}
+        samtools view -F 2308 {input} | awk -F'\\t' '{{print length($10)}}' > {output}
         """
 
 

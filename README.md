@@ -61,6 +61,7 @@ Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, 
 ## Outputs
 
 `results/<run_code>/consensus/`: `<data_code>.isoforms.{gtf,fa}.gz`, `_novel_provenance.tsv`,
-`_tool_overlap.tsv`, `_tracking_numbers.tsv` (the funnel), `_sanity_genes.tsv{,.events.tsv}` (the STMN2
-and UNC13A cryptic exons traced stage by stage). Cross-cohort:
+`_tool_overlap.tsv`, `_tracking_numbers.tsv` (the funnel), `_sanity_genes.tsv{,.events.tsv}` (the six TDP-43
+positive controls, each found by its junction and traced stage by stage: knockdown UNC13A and STMN2 cryptic exons
+and KCNQ2 exon 5 skip; overexpression HYOU1, NUP93 and XPNPEP1 exon skips). Cross-cohort:
 `references/novel_isoform_references/<run_code>/isoforms_<run_code>.{gtf,fa}.gz`.

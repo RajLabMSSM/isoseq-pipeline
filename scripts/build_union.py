@@ -5,6 +5,9 @@ isoquant extended annotations) are dropped."""
 import argparse
 import re
 
+# GOAL = take the 12 input GTF files, remove transcripts whose IDs already exist in GENCODE, give every remaining transcript a unique identifier, 
+# record where it came from, and concatenate everything into one GTF.
+
 # gtf has 9 tab-separated columns; column 3 (index 2) is the feature type, column 9 (index 8) the attributes
 GTF_N_COLUMNS = 9
 GTF_FEATURE = 2

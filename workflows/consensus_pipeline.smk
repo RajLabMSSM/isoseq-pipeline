@@ -12,14 +12,14 @@ sanity_event_list = ("UNC13A:chr19:17641557-17642413+17642542-17642844," # becau
                      "XPNPEP1:chr10:109884149-109888048")
 
 
-# the three assembler gtfs of one group, by tool
+# the three assembler gtfs of one group, by tool (so tool_gtfs("control") would give the 2 control GTFs)
 def tool_gtfs(g):
     return {"bambu":     out_folder + "bambu/%s/%s_%s_extended_annotations.gtf" % (g, data_code, g),
             "isoquant":  out_folder + "isoquant/%s/%s_%s/%s_%s.extended_annotation.gtf" % (g, data_code, g, data_code, g),
             "stringtie": out_folder + "stringtie3/%s/%s_%s.stringtie.gtf" % (g, data_code, g)}
 
 
-# every tool x group gtf, unioned; tama_merge keeps any model from any one tool (no vote)
+# taking a union using tama_merge, which keeps any model from any one tool
 rule consensus_isoforms:
     input:
         gtfs = [p for g in groups for p in tool_gtfs(g).values()],

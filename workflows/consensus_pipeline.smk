@@ -31,7 +31,9 @@ rule consensus_isoforms:
         gtf      = cons + "_merged_consensus.gtf",
         venn_tsv = cons + "_tool_overlap.tsv",
         stats    = cons + "_consensus_stats.tsv",
-        member   = cons + "_tool_membership.tsv"
+        member   = cons + "_tool_membership.tsv",
+        # gffcompare's union-vs-reference gtf; kept and declared because rule sanity_genes reads it
+        annotated = cons + "_gffcmp.annotated.gtf"
     params:
         prefix     = cons + "_gffcmp",
         union      = cons + "_union.gtf",
@@ -126,13 +128,14 @@ rule sanity_genes:
         cons = cons + "_merged_consensus.gtf",
         sqp  = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
         sqr  = out_folder + "sqanti/" + data_code + "_filtering_reasons.txt",
+        # the union as gffcompare classified it, written by rule consensus_isoforms; an input, so snakemake
+        # rebuilds it if it is missing and re-runs this step when it changes
+        union = cons + "_gffcmp.annotated.gtf",
         # the script is an input, so editing it re-runs this step
         script = "scripts/check_genes.py"
     output:
         tsv    = cons + "_sanity_genes.tsv",
         events = cons + "_sanity_genes.tsv.events.tsv"
-    params:
-        union = cons + "_gffcmp.annotated.gtf"
     shell:
         """
         python {input.script} \
@@ -143,7 +146,7 @@ rule sanity_genes:
         --source ONT \
         --events '{sanity_event_list}' \
         --event-tol 0 \
-        --union-gtf {params.union} \
+        --union-gtf {input.union} \
         --consensus-gtf {input.cons} \
         --sqanti-pass-ids {input.sqp} \
         --sqanti-reasons {input.sqr} \

@@ -173,12 +173,19 @@ def main():
             sf.write("%s\t%d\t%d\t%d\t%d\n" % (t, raw_by_tool[t], candidates_by_tool[t],
                                                   mono_by_tool[t], unstranded_by_tool[t]))
 
-    # one bed per tool + group source; source names carry no underscore, tama's separator
+    # one bed per tool + group source. tama joins source name and transcript with "_", so a source name may not
+    # contain one: keep only letters and digits. two different groups could then end up with the same name
+    # (cohort_1CTRL and cohort1_CTRL both become cohort1CTRL), so stop if that happens instead of merging them
     os.makedirs(args.workdir, exist_ok=True)
+    source_of = {}
+    for d in tx.values():
+        source_of[(d["tool"], d["group"])] = re.sub(r"[^A-Za-z0-9]", "", d["tool"] + d["group"])
+    if len(set(source_of.values())) != len(source_of):
+        raise SystemExit("two tool + group pairs give the same tama source name: %s" % source_of)
     by_source = defaultdict(list)
     for uid in novel:
         d = tx[uid]
-        by_source[d["tool"] + d["group"].replace("_", "")].append(uid)
+        by_source[source_of[(d["tool"], d["group"])]].append(uid)
     filelist = os.path.join(args.workdir, "filelist.txt")
     with open(filelist, "w") as fl:
         for src in sorted(by_source):
@@ -211,15 +218,20 @@ def main():
         chrom, _strand, exons = models[mid]
         return (chrom, exons[0][0], exons[-1][1])
 
-    # write the consensus gtf with class code and reference tags, and note which tools support each model
+    # every group (condition) in this run, for the per-group support columns
+    group_names = sorted({d["group"] for d in tx.values()})
+
+    # write the consensus gtf with class code and reference tags, and note which tools and which groups built
+    # each model (from the union models tama merged into it)
     rows = []
     order = sorted(models, key=model_position)
     with open(args.output, "w") as out:
         for mid in order:
             cc, ref_id = merged_cc.get(mid, UNMATCHED)
             tools = sorted({tx[u]["tool"] for u in members.get(mid, [])})
+            groups = sorted({tx[u]["group"] for u in members.get(mid, [])})
             out.write(gtf_lines(mid, *models[mid], extra=' class_code "%s"; cmp_ref "%s";' % (cc, ref_id)))
-            rows.append({"transcript_id": mid, "class_code": cc, "tools": tools})
+            rows.append({"transcript_id": mid, "class_code": cc, "tools": tools, "groups": groups})
 
     # count merged models per supporting-tool combination, all three tools first
     counts = Counter(tuple(r["tools"]) for r in rows)
@@ -231,12 +243,18 @@ def main():
             for s in combinations(TOOLS, k):
                 out.write("%s\t%d\n" % ("+".join(s), counts[s]))
         out.write("total_novel\t%d\n" % len(rows))
-    # membership table: one row per merged model, a 0/1 column per tool
+    # membership table: one row per merged model, a 0/1 column per tool, then the number of groups and a 0/1
+    # column per group (group_<name>), so a model built in one condition only can be told apart. the group
+    # columns come last: readers pick columns by name, and build_reference_with_novel.py carries every column
+    # after is_novel into the provenance table
     with open(args.membership_out, "w") as out:
-        out.write("transcript_id\tclass_code\tis_novel\tn_tools\t%s\n" % "\t".join(TOOLS))
+        out.write("transcript_id\tclass_code\tis_novel\tn_tools\t%s\tn_groups\t%s\n"
+                  % ("\t".join(TOOLS), "\t".join("group_" + g for g in group_names)))
         for r in rows:
-            flags = "\t".join("1" if t in r["tools"] else "0" for t in TOOLS)
-            out.write("%s\t%s\t1\t%d\t%s\n" % (r["transcript_id"], r["class_code"], len(r["tools"]), flags))
+            tool_flags = "\t".join("1" if t in r["tools"] else "0" for t in TOOLS)
+            group_flags = "\t".join("1" if g in r["groups"] else "0" for g in group_names)
+            out.write("%s\t%s\t1\t%d\t%s\t%d\t%s\n" % (r["transcript_id"], r["class_code"], len(r["tools"]),
+                                                        tool_flags, len(r["groups"]), group_flags))
 
     print("* tama merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
           "-> %d merged models (junctions +-%dbp, 3' +-%dbp, no_cap) -> %s"

@@ -1,42 +1,52 @@
 #!/usr/bin/env python
-"""The reference gtf verbatim plus the novel merged-consensus models (class code not in
---exclude-codes, and in --keep-list), renamed <prefix>_NNNNNN with source <source>.
+"""Combine the reference GTF with the novel models of the merged consensus.
 
-The gene is SQANTI3's associated_gene; a SQANTI novelGene becomes a fresh <prefix>G_NNNNNN locus.
-When several genes are named, the gene of associated_transcript leads (a fusion: the 5' gene on the
-model's strand), the others go to bridging. --novel-only --no-rename writes the SQANTI input instead."""
+The reference GTF is copied unchanged. The novel models added after it are those whose class code is not
+in --exclude-codes and, when --keep-list is given, whose id is on that list.
+Each novel model is renamed <prefix>_NNNNNN and gets the source <source>.
+
+Each model's gene is SQANTI3's associated_gene. A model SQANTI calls a novelGene gets a new
+<prefix>G_NNNNNN locus.
+When SQANTI names several genes, one gene leads and the others are recorded as bridged genes.
+For a fusion, the lead is the gene that lies 5' on the model's strand. Otherwise the lead is the gene of
+associated_transcript.
+
+With --novel-only --no-rename, the script instead writes the SQANTI input: only the novel models, under
+their merged ids."""
 import argparse
 import gzip
 import re
 from collections import namedtuple
 
-# one novel model as written out: new id, gene, reference gene of its gffcompare match, class code,
-# how the gene was assigned (SQANTI structural category; a placeholder under --no-rename, which never
-# writes it), further genes it bridges
+# One novel model as written to the output.
+# It holds the new id, the gene, the reference gene of its gffcompare match and the class code.
+# It also records how the gene was assigned (the SQANTI structural category) and any further genes it bridges.
+# Under --no-rename the assignment is only a placeholder, because that mode never writes it.
 NovelRecord = namedtuple("NovelRecord",
                          ["new_tid", "gene_id", "ref_gene", "class_code", "gene_assignment", "bridging"])
-# membership table: transcript_id, class_code, is_novel, then the per-tool columns carried into provenance
+# The membership table starts with transcript_id, class_code and is_novel.
+# The columns after these are the per-tool columns that are copied into the provenance table.
 MEMBERSHIP_FIRST_CARRIED_COLUMN = 3
 
 
 def opener(path):
-    # open plain or gzipped text the same way
+    # Open plain or gzipped text files the same way.
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
 
 def attr(field, key):
-    # value of one gtf attribute (key "value";), or None when the key is missing
+    # Return the value of one GTF attribute, written as key "value";, or None when the key is missing.
     m = re.search(key + r' "([^"]*)"', field)
     return m.group(1) if m else None
 
 
 def base(tx):
-    # transcript id without its ".version" suffix
+    # Return the transcript id without its ".version" suffix.
     return tx.split(".")[0] if tx else tx
 
 
 def gtf_records(path, features):
-    # yield the split columns of every gtf line whose feature type is in features
+    # Yield the split columns of every GTF line whose feature type is in features.
     with opener(path) as fh:
         for line in fh:
             c = line.rstrip("\n").split("\t")
@@ -62,15 +72,17 @@ def main():
     if not args.no_rename and not args.sqanti_classification:
         raise SystemExit("--sqanti-classification is required unless --no-rename")
 
-    # class codes to leave out, and the optional list of model ids to keep (SQANTI-passed models)
+    # Read the class codes to leave out, and the optional list of model ids to keep.
+    # The keep list holds the models that passed the SQANTI filter.
     drop = set(c for c in args.exclude_codes.split(",") if c)
     keep = None
     if args.keep_list:
         with open(args.keep_list) as fh:
             keep = {line.strip() for line in fh if line.strip()}
 
-    # reference transcript (no version) -> gene id, and gene id -> (lowest start, highest end) over its
-    # transcripts. the span shows which gene of a fusion lies 5'
+    # Map each reference transcript, without its version, to its gene.
+    # Also record each gene's span, from its lowest transcript start to its highest transcript end.
+    # The span shows which gene of a fusion lies 5'.
     tx2gene = {}
     gene_span = {}
     for c in gtf_records(args.reference, ("transcript",)):
@@ -80,7 +92,8 @@ def main():
         low, high = gene_span.get(gene, (start, end))
         gene_span[gene] = (min(low, start), max(high, end))
 
-    # SQANTI classification: isoform -> (structural category, associated gene, associated transcript)
+    # Read the SQANTI classification.
+    # For each isoform, keep its structural category, associated gene and associated transcript.
     sq = {}
     if args.sqanti_classification:
         with opener(args.sqanti_classification) as fh:
@@ -93,8 +106,8 @@ def main():
                 f = line.rstrip("\n").split("\t")
                 sq[f[isoform_col]] = (f[category_col], f[gene_col], f[transcript_col])
 
-    # novel models to write, in file order (file order keeps the renamed ids stable), with their class
-    # code and the reference gene of their gffcompare match
+    # Collect the novel models to write, in file order. File order keeps the new ids stable between runs.
+    # Also record each model's class code, strand and the reference gene of its gffcompare match.
     order = []
     cc_of = {}
     ref_gene_of = {}
@@ -108,35 +121,38 @@ def main():
         cc_of[tid] = cc
         ref_gene_of[tid] = tx2gene.get(base(attr(c[8], "cmp_ref"))) or "NA"
         strand_of[tid] = c[6]
-    # gene id tama gave each kept model (written as is under --no-rename)
+    # Record the gene id that TAMA gave each kept model. Under --no-rename this id is written unchanged.
     merged_gene = {}
     for c in gtf_records(args.merged, ("exon",)):
         tid = attr(c[8], "transcript_id")
         if tid in cc_of:
             merged_gene.setdefault(tid, attr(c[8], "gene_id"))
 
-    # SQANTI novelGene label -> fresh locus id, numbered in order of first use
+    # Give each SQANTI novelGene label a new locus id, numbered in order of first use.
     locus_ids = {}
 
     def five_prime_gene(genes, strand):
-        # the gene that starts first in the model's reading direction: lowest gene start on the plus
-        # strand, highest gene end on the minus strand. SQANTI sorts genes by id, so a tie takes the
-        # lowest id. fusion partners share the model's strand (checked on v9: none differ)
+        # Return the gene that starts first in the model's reading direction.
+        # On the plus strand this is the gene with the lowest start. On the minus strand it is the gene with
+        # the highest end.
+        # SQANTI sorts genes by id, so a tie goes to the lowest id.
+        # Fusion partners share the model's strand. This was checked on v9, where none differ.
         if strand == "+":
             return min(genes, key=lambda gene: gene_span[gene][0])
         return max(genes, key=lambda gene: gene_span[gene][1])
 
     def place(tid):
-        # gene, assignment label and bridged genes of one model. every kept model has a SQANTI call, so
-        # a missing one stops the run here instead of keeping a gene nobody assigned
+        # Decide the gene, the assignment label and the bridged genes of one model.
+        # Every kept model has a SQANTI call, so a missing call stops the run instead of keeping an
+        # unassigned gene.
         category, assoc_gene, assoc_transcript = sq[tid]
-        # a SQANTI novel gene: one new locus id per novelGene label
+        # A SQANTI novel gene gets one new locus id per novelGene label.
         if assoc_gene.startswith("novelGene"):
             locus_ids.setdefault(assoc_gene, "%sG_%06d" % (args.prefix, len(locus_ids) + 1))
             return locus_ids[assoc_gene], category, []
-        # one or more known genes (joined by "_"): a fusion is led by its 5' gene, any other model by the
-        # gene of associated_transcript when that is one of them, else by SQANTI's first gene. the rest
-        # are bridged genes
+        # SQANTI can name one or more known genes, joined by "_". A fusion is led by its 5' gene.
+        # Any other model is led by the gene of associated_transcript when that gene is one of them.
+        # Otherwise SQANTI's first gene leads. The remaining genes are recorded as bridged.
         genes = assoc_gene.split("_")
         if category == "fusion":
             lead = five_prime_gene(genes, strand_of[tid])
@@ -146,7 +162,8 @@ def main():
             genes.insert(0, genes.pop(genes.index(lead)))
         return genes[0], category, genes[1:]
 
-    # one record per kept model: renamed <prefix>_NNNNNN and placed on its gene, or as is with --no-rename
+    # Build one record per kept model. Each model is renamed <prefix>_NNNNNN and placed on its gene.
+    # With --no-rename the model keeps its merged id and TAMA gene.
     tx_map = {}
     for n, tid in enumerate(order, start=1):
         if args.no_rename:
@@ -156,10 +173,11 @@ def main():
             tx_map[tid] = NovelRecord("%s_%06d" % (args.prefix, n), gid, ref_gene_of[tid], cc_of[tid],
                                       how, bridging)
 
-    # provenance table: the new record plus the per-tool membership columns of the merged model
+    # Write the provenance table: each new record plus the per-tool membership columns of its merged model.
     if args.provenance_out and args.membership:
         with open(args.membership) as fh:
-            # skip transcript_id, class_code, is_novel; carry the remaining columns (n_tools and one per tool)
+            # Skip transcript_id, class_code and is_novel.
+            # Carry the remaining columns, which are n_tools and one column per tool.
             carry = fh.readline().rstrip("\n").split("\t")[MEMBERSHIP_FIRST_CARRIED_COLUMN:]
             member = {}
             for line in fh:
@@ -176,7 +194,8 @@ def main():
                 out.write("\t".join([rec.new_tid, str(rec.gene_id), rec.ref_gene, rec.class_code,
                                      rec.gene_assignment, ",".join(rec.bridging)] + vals) + "\n")
 
-    # output gtf: the reference as is (unless --novel-only), then the kept models with new ids and tags
+    # Write the output GTF. The reference comes first, unchanged, unless --novel-only is set.
+    # The kept models follow with their new ids and tags.
     with open(args.output, "w") as out:
         if not args.novel_only:
             with opener(args.reference) as ref:
@@ -194,8 +213,9 @@ def main():
                          % (rec.ref_gene, rec.class_code, rec.gene_assignment, ",".join(rec.bridging)))
             out.write("\t".join(c) + "\n")
 
-    # summary: models on known genes (not a fresh <prefix>G_ locus) and models bridging a second gene.
-    # skipped under --no-rename, where no gene has been assigned yet
+    # Print a summary of how many models sit on known genes rather than a new <prefix>G_ locus.
+    # Also count the models that bridge a second gene.
+    # The summary is skipped under --no-rename, because no genes have been assigned yet.
     if not args.no_rename:
         known = sum(1 for rec in tx_map.values() if not str(rec.gene_id).startswith(args.prefix + "G_"))
         bridged = sum(1 for rec in tx_map.values() if rec.bridging)

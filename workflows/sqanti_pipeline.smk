@@ -1,22 +1,25 @@
 import glob
 import os
 
-# the rules filter definition kept in the pipeline repo
+# Path to the SQANTI rules filter definition, which is kept in the pipeline repo.
 sqanti_rules = os.path.join(workflow.basedir, "misc", "sqanti_rules.json")
-# STAR junctions for SQANTI's short-read junction coverage. exclude_samples are dropped (tdpkd: TDP-5
-# aberrant differentiation, CTRL-4 low-depth outlier); the sample id is the file name before the
-# first dot (<sample>.SJ.out.tab)
+# Collect the STAR junction files that SQANTI uses to measure short-read support for each junction.
+# Samples listed in exclude_samples are left out. For tdpkd these are TDP-5 (aberrant differentiation)
+# and CTRL-4 (a low-depth outlier).
+# The sample id is the part of the file name before the first dot, as in <sample>.SJ.out.tab.
 sqanti_sj =[f for f in sorted(glob.glob(os.path.join(junction_folder, "*.SJ.out.tab")))
              if os.path.basename(f).split(".")[0] not in excluded_samples]
 
 
-# the novel consensus models (class codes = and c left out) under their merged ids, so SQANTI's pass
-# list maps straight back onto merged_consensus
+# Write only the novel consensus models as SQANTI's input.
+# Models with gffcompare class code = (same intron chain as a reference transcript) or c (contained in one)
+# are left out.
+# The models keep their merged ids, so SQANTI's pass list maps straight back onto the merged consensus.
 rule novel_consensus_gtf:
     input:
         merged = cons + "_merged_consensus.gtf",
         ref    = ref_gtf,
-        # the script is an input, so editing it re-runs this step
+        # The script is listed as an input, so editing it re-runs this step.
         script = "scripts/build_reference_with_novel.py"
     output:
         gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf"
@@ -31,11 +34,12 @@ rule novel_consensus_gtf:
         """
 
 
-# -c gives every junction its short-read support (min_sample_cov) for the rules filter.
-# CAGE peaks and the polyA motif list fill the QC report only, no filter rule reads them.
-# the genePreds are removed first, sqanti reuses a stale one otherwise.
-# one thread: the input is a gtf, so sqanti aligns nothing and -t has no work to spread.
-# sqanti also writes _corrected.gtf and .fasta, but nothing reads them, so they are not declared
+# Run SQANTI3 quality control on the novel models.
+# The -c option gives every junction its short-read support (min_sample_cov), which the rules filter uses.
+# The CAGE peaks and the polyA motif list only add information to the QC report. No filter rule reads them.
+# Old genePred files are removed first, because SQANTI otherwise reuses a stale one.
+# One thread is enough. The input is a GTF, so SQANTI aligns nothing and has no work to split.
+# SQANTI also writes _corrected.gtf and .fasta files. Nothing reads them, so they are not declared as outputs.
 rule sqanti_qc:
     input:
         gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf",
@@ -64,12 +68,17 @@ rule sqanti_qc:
         """
 
 
-# rules: FSM intra-priming only; the rest also all-canonical + min_sample_cov >= 2. RTS_stage is left out, it drops the UNC13A CE.
-# -e (--filter_mono_exonic) is a guard: the consensus step already drops single-exon models, so it removes
-# none today, and it would stop them if that step changed. the FSM rule is the same kind of guard: no FSM
-# model reaches this step, since class code = models are left out above.
-# the pass list is all the next steps need, so no filtered gtf or fasta is asked for.
-# reasons is read by rule sanity_genes
+# Filter the SQANTI calls with the rules in sqanti_rules.json.
+# Full splice matches (FSM) are checked for intra-priming only.
+# Every other model must also have only canonical junctions, each supported by short reads in at least
+# 2 samples (min_sample_cov >= 2).
+# The RTS_stage rule is left out, because it removes the UNC13A cryptic exon.
+# The -e option (--filter_mono_exonic) is a safeguard. The consensus step already drops single-exon models,
+# so it removes nothing today, but it would catch them if that step changed.
+# The FSM rule is the same kind of safeguard. No FSM model reaches this step, because models with class
+# code = are left out above.
+# The next steps only need the pass list, so no filtered GTF or FASTA is requested.
+# The filtering reasons file is read by rule sanity_genes.
 rule sqanti_filter:
     input:
         classification = out_folder + "sqanti/" + data_code + "_classification.txt"

@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Per cross-cohort novel isoform, one 0/1 column per cohort x tool: 1 when any of its members from
-that cohort was built by that tool (from the cohort's novel_provenance.tsv)."""
+"""Record which assembly tools support each cross-cohort novel isoform in each cohort.
+
+The output has one 0/1 column for every combination of cohort and tool.
+A column is 1 when any of the isoform's members from that cohort was built by that tool.
+The tool calls come from each cohort's novel_provenance.tsv."""
 import argparse
 
 TOOLS = ["bambu", "isoquant", "stringtie"]
 
 
 def load_cohort(path):
-    # cohort provenance -> {transcript id: (bambu, isoquant, stringtie) 0/1}; NA or empty counts as 0
+    # Read one cohort's provenance table into a dictionary of transcript id to 0/1 flags for bambu,
+    # isoquant and stringtie. NA or an empty value counts as 0.
     d = {}
     with open(path) as fh:
         header = fh.readline().rstrip("\n").split("\t")
@@ -26,7 +30,7 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
-    # every cohort's tool flags, in the order the cohorts were given
+    # Load every cohort's tool flags, keeping the order in which the cohorts were given.
     order = []
     per_cohort = {}
     for spec in args.cohort:
@@ -34,7 +38,7 @@ def main():
         order.append(name)
         per_cohort[name] = load_cohort(path)
 
-    # output columns: the cross-cohort ids, then <cohort>_<tool> for every cohort and tool
+    # The output starts with the cross-cohort columns, then one <cohort>_<tool> column for every cohort and tool.
     cols = ["new_id", "gene_id", "class_code", "n_cohorts", "cohorts"]
     for c in order:
         cols += ["%s_%s" % (c, t) for t in TOOLS]
@@ -45,7 +49,7 @@ def main():
         idx = {c: i for i, c in enumerate(header)}
         for line in fh:
             f = line.rstrip("\n").split("\t")
-            # a tool flag of a cohort is 1 when any member from that cohort was built by the tool
+            # Set a cohort's tool flag to 1 when any member from that cohort was built by that tool.
             flags = {c: [0] * len(TOOLS) for c in order}
             for src in f[idx["src_ids"]].split("|"):
                 if ":" not in src:

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Launch every cohort's isoseq run, then the cross-cohort union once all of them finish (LSF dependency).
+# Launch every cohort's isoseq run, then start the cross-cohort union once all of them finish.
+# An LSF job dependency makes the union wait for the cohort runs.
 #   ./build_reference.sh       full build
 #   ./build_reference.sh -r    resume (--rerun-triggers mtime)
 #   ./build_reference.sh -x    cross-cohort union only
@@ -15,7 +16,8 @@ COHORTS=(
 RESUME=""
 CROSS_ONLY=""
 while getopts 'rxh' flag; do
-  # -r resume, -x cross-cohort only; any other flag prints the comment header at the top of this file
+  # -r resumes the runs and -x runs only the cross-cohort step.
+  # Any other flag prints the usage lines at the top of this file.
   case "$flag" in
     r) RESUME="-r" ;;
     x) CROSS_ONLY="1" ;;
@@ -26,8 +28,8 @@ shift $((OPTIND - 1))
 [ $# -eq 0 ] || { echo "usage: build_reference.sh [-r] [-x]" >&2; exit 1; }
 
 launch_cross() {
-  # start the cross-cohort union at once when no dependency is given, otherwise submit a small LSF
-  # job that waits (-w) for the cohort runs and then starts it
+  # Start the cross-cohort union straight away when no dependency is given.
+  # Otherwise submit a small LSF job that waits (-w) for the cohort runs to finish and then starts it.
   cd "$XC"
   mkdir -p logs
   if [ -z "$1" ]; then
@@ -48,16 +50,17 @@ fi
 
 dep=""
 for entry in "${COHORTS[@]}"; do
-  # submit each cohort run and collect its LSF job id into one dependency expression,
-  # done(<id1>) && done(<id2>) ..., so the cross-cohort trigger waits for all of them
-  # each entry is "<cohort folder>:<config file>": the part before and after the colon
+  # Submit each cohort run and add its LSF job id to one dependency expression.
+  # The expression reads done(<id1>) && done(<id2>), so the cross-cohort trigger waits for all of them.
+  # Each entry is written as <cohort folder>:<config file>, so it is split at the colon.
   dir="${entry%%:*}"
   cfg="${entry##*:}"
   cd "$dir"
-  # the real path, not the cohort's symlink: workflow.basedir must be this repo (misc/sqanti_rules.json)
+  # Use the real path to the Snakefile, not the cohort's symlink.
+  # workflow.basedir must point to this repo, so that misc/sqanti_rules.json is found.
   out=$(snakejob_HPC -s "$REPO/pipelines/isoseq-pipeline/Snakefile" -c "$cfg" $RESUME)
   echo "$out"
-  # the job id is the number in LSF's "Job <id> is submitted" line (the last one printed)
+  # Take the job id from the last "Job <id> is submitted" line that LSF printed.
   id=$(echo "$out" | grep -oP 'Job <\K[0-9]+' | tail -1)
   [ -n "$id" ] || { echo "ERROR: no job id captured for $dir" >&2; exit 1; }
   if [ -z "$dep" ]; then

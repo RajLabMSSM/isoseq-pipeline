@@ -1,15 +1,16 @@
 reference: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode_hg38_v50/gencode.v50.primary_assembly.annotation.gtf.gz"
 genome_fasta: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.fa"
 
-# the only key to change for a new build; the output folder, the output name and the cohort paths below follow it
+# This is the only key to change for a new build.
+# The output folder, the output name and the cohort paths below all follow it.
 run_code: "v10"
 reference_root: "/sc/arion/projects/als-omics/brooke-phd-thesis/references/novel_isoform_references/"
 
-# must match consensus_junction_wobble / consensus_tes_tol in the cohort configs
+# These must match consensus_junction_wobble and consensus_tes_tol in the cohort configs.
 wobble: 0
 tes_tol: 100
 
-# no underscore in cohort names (tama's source separator)
+# Cohort names must not contain an underscore, because TAMA uses the underscore to separate source names.
 cohorts:
   tdpkd: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/results/{run_code}/consensus/tdpkd_nanopore.isoforms.gtf.gz"
   sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/results/{run_code}/consensus/sun_tdp_overexpression_nanopore.isoforms.gtf.gz"

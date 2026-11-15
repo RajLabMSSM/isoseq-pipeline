@@ -1,31 +1,36 @@
 #!/usr/bin/env python
-"""Final gene_id of every cross-cohort novel isoform: the gene of its longest member (first in
-src_ids order on a tie), taken from that member's cohort gtf, with its bridging genes. Members in a
-per-cohort novel locus (NOVELG_) are grouped once across cohorts into gffcompare loci, one
-<prefix>G_ id per locus in gffcompare order."""
+"""Set the final gene_id of every cross-cohort novel isoform.
+
+Each isoform takes the gene and bridging genes of its longest member, read from that member's cohort GTF.
+When members are equally long, the first one in src_ids order wins.
+Some longest members sit on a per-cohort novel locus (NOVELG_). These isoforms are grouped into loci
+across all cohorts with gffcompare.
+Each locus gets one <prefix>G_ id, numbered in gffcompare order."""
 import argparse
 import gzip
 import os
 import re
 import subprocess
 
-# gene ids of the per-cohort novel loci carry this tag (build_reference_with_novel.py, --prefix NOVEL)
+# Gene ids of the per-cohort novel loci carry this tag.
+# build_reference_with_novel.py writes it, because the cohort runs use --prefix NOVEL.
 COHORT_LOCUS_TAG = "NOVELG_"
 
 
 def attr(field, key):
-    # value of one gtf attribute (key "value";), or None when the key is missing
+    # Return the value of one GTF attribute, written as key "value";, or None when the key is missing.
     m = re.search(key + r' "([^"]*)"', field)
     return m.group(1) if m else None
 
 
 def opener(path):
-    # open plain or gzipped text the same way
+    # Open plain or gzipped text files the same way.
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
 
 def load_cohort(path, cohort, source, members):
-    # novel models of one cohort gtf -> members["<cohort>:<id>"] = gene, bridging genes, summed exon length
+    # Read the novel models of one cohort GTF into members, under the key <cohort>:<id>.
+    # For each model, store its gene, its bridging genes and its summed exon length.
     with opener(path) as fh:
         for line in fh:
             c = line.split("\t")
@@ -53,19 +58,19 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
-    # every cohort's novel models, keyed as in the src_ids column of the provenance
+    # Load every cohort's novel models, keyed the same way as the src_ids column of the provenance table.
     members = {}
     for spec in args.cohort:
         name, path = spec.split("=", 1)
         load_cohort(path, name, args.novel_source, members)
 
-    # the union provenance: one row per cross-cohort model
+    # Read the union provenance table, which has one row per cross-cohort model.
     with open(args.provenance) as fh:
         hdr = fh.readline().rstrip("\n").split("\t")
         prov = [dict(zip(hdr, line.rstrip("\n").split("\t"))) for line in fh]
 
-    # each model takes the gene and bridging genes of its longest member; models whose longest member
-    # sits on a per-cohort novel locus get a cross-cohort locus id below instead
+    # Give each model the gene and bridging genes of its longest member.
+    # Models whose longest member sits on a per-cohort novel locus get a cross-cohort locus id further down.
     gene = {}
     bridging = {}
     locus_tx = []
@@ -78,7 +83,8 @@ def main():
             gene[r["new_id"]] = m["gene"]
         bridging[r["new_id"]] = m["bridging"]
 
-    # group the novel-locus models into loci with gffcompare (its XLOC ids), one <prefix>G_ id per locus
+    # Group the novel-locus models into loci with gffcompare, using its XLOC ids.
+    # Each locus then gets one <prefix>G_ id.
     os.makedirs(args.workdir, exist_ok=True)
     loci_gtf = os.path.join(args.workdir, "novel_loci.gtf")
     wanted = set(locus_tx)
@@ -102,8 +108,9 @@ def main():
     for t in locus_tx:
         gene[t] = locus_id[xloc[t]]
 
-    # rewrite the gtf: reference lines as is; novel lines get the final gene id, transcript lines the
-    # bridging genes; the old gene ids are kept to count the changes
+    # Rewrite the GTF. Reference lines are copied unchanged.
+    # Novel lines get the final gene id, and novel transcript lines also get the bridging genes.
+    # The old gene ids are kept so that the number of changed genes can be reported.
     old = {}
     with opener(args.gtf) as fh, open(args.output, "w") as out:
         for line in fh:
@@ -119,7 +126,7 @@ def main():
                 c[8] = re.sub(r' bridging "[^"]*";', "", c[8]) + ' bridging "%s";' % bridging[tid]
             out.write("\t".join(c) + "\n")
 
-    # provenance with the final gene id and the bridging genes as the last column
+    # Write the provenance table with the final gene id, and with the bridging genes as the last column.
     cols = [h for h in hdr if h != "bridging"] + ["bridging"]
     with open(args.provenance_out, "w") as out:
         out.write("\t".join(cols) + "\n")

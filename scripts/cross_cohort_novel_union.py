@@ -1,7 +1,11 @@
 #!/usr/bin/env python
-"""Merge the cohorts' novel isoforms (source --novel-source) with tama_merge at the within-cohort
-tolerances, drop single-exon novels, and append GENCODE verbatim. Gene ids are provisional;
-cross_cohort_novel_genes.py sets the final ones. Cohort names carry no underscore (tama's separator)."""
+"""Merge the novel isoforms of all cohorts into one cross-cohort set and append GENCODE.
+
+Novel isoforms are the models whose source column is --novel-source.
+They are merged with tama_merge at the same tolerances used within each cohort.
+Single-exon novel models are dropped, and GENCODE is appended unchanged.
+The gene ids written here are provisional. cross_cohort_novel_genes.py sets the final ones.
+Cohort names must not contain an underscore, because TAMA uses it to separate source names."""
 import argparse
 import gzip
 import os
@@ -9,28 +13,29 @@ import re
 import sys
 from collections import Counter
 
-# the tama helpers live in consensus_tama.py next to this script
+# The TAMA helper functions live in consensus_tama.py, next to this script.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from consensus_tama import read_bed12, run_tama, write_bed12  # noqa: E402
 
-# gene ids of the per-cohort novel loci carry this tag (build_reference_with_novel.py, --prefix NOVEL)
+# Gene ids of the per-cohort novel loci carry this tag.
+# build_reference_with_novel.py writes it, because the cohort runs use --prefix NOVEL.
 COHORT_LOCUS_TAG = "NOVELG_"
 
 
 def attr(field, key):
-    # value of one gtf attribute (key "value";), or None when the key is missing
+    # Return the value of one GTF attribute, written as key "value";, or None when the key is missing.
     m = re.search(key + r' "([^"]*)"', field)
     return m.group(1) if m else None
 
 
 def opener(path):
-    # open plain or gzipped text the same way
+    # Open plain or gzipped text files the same way.
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
 
 def load_novel(path, cohort, source_tag, tx):
-    # add the novel models (source column = source_tag) of one cohort gtf to tx, keyed <cohort>_<id>;
-    # returns how many were added
+    # Add the novel models of one cohort GTF to tx. Novel models are those whose source column is source_tag.
+    # Each model is stored under <cohort>_<id>. The function returns how many models were added.
     n = 0
     with opener(path) as fh:
         for line in fh:
@@ -71,7 +76,7 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
 
-    # load every cohort's novel models
+    # Load the novel models of every cohort.
     tx = {}
     per_cohort = {}
     for spec in args.cohort:
@@ -81,7 +86,8 @@ def main():
         per_cohort[name] = load_novel(path, name, args.novel_source, tx)
     for d in tx.values():
         d["exons"].sort()
-    # spliced stranded models go to tama; single-exon ones are dropped; an unstranded spliced one stops the run
+    # Send spliced models with a strand to TAMA, and drop single-exon models.
+    # A spliced model without a strand stops the run, because TAMA cannot place it.
     n_loaded = len(tx)
     spliced = [u for u in tx if len(tx[u]["exons"]) > 1 and tx[u]["strand"] in ("+", "-")]
     n_mono = sum(1 for u in tx if len(tx[u]["exons"]) == 1)
@@ -91,7 +97,8 @@ def main():
     print("* loaded novel isoforms: " + ", ".join("%s=%d" % (k, v) for k, v in per_cohort.items())
           + " (total %d, %d single-exon dropped)" % (n_loaded, n_mono))
 
-    # one bed per cohort (name field = the cohort's own id), merged with tama, every cohort equal (1,1,1)
+    # Write one BED file per cohort, with each model's own cohort id in the name field.
+    # TAMA then merges them, with every cohort given equal weight (1,1,1).
     os.makedirs(args.workdir, exist_ok=True)
     filelist = os.path.join(args.workdir, "filelist.txt")
     with open(filelist, "w") as fl:
@@ -103,8 +110,8 @@ def main():
     run_tama(args.python2, args.tama_merge, filelist, prefix, args.wobble, args.tes_tol,
              len(spliced))
     models = read_bed12(prefix + ".bed")
-    # merged model -> its members as <cohort>_<id>, the keys of tx. consensus_tama.read_members strips
-    # the source prefix, so it is not reused here
+    # List each merged model's members as <cohort>_<id>, which are the keys of tx.
+    # consensus_tama.read_members strips the source prefix, so it is not reused here.
     members = {}
     with open(prefix + "_trans_report.txt") as fh:
         hdr = fh.readline().rstrip("\n").split("\t")
@@ -115,22 +122,24 @@ def main():
     print("* tama merge: %d spliced novel -> %d cross-cohort isoforms (junctions +-%dbp, 3' +-%dbp, no_cap)"
           % (len(spliced), len(models), args.wobble, args.tes_tol))
 
-    # one record per merged model: its cohorts, its members as cohort:id, and the longest member
-    # (summed exon length), whose gene id, class code and reference gene the model takes
+    # Build one record per merged model, with its cohorts and its members written as cohort:id.
+    # The model takes the gene id, class code and reference gene of its longest member.
+    # Length is the summed exon length.
     reps = []
     for mid, (chrom, strand, exons) in models.items():
         mem = members[mid]
         cohorts = sorted({m.split("_", 1)[0] for m in mem})
         mem = sorted(mem, key=lambda m: tx[m]["cohort"])
-        # max keeps the first of equally long members, so a tie goes to the first cohort in name order
+        # When members are equally long, max keeps the first one, so the tie goes to the first cohort by name.
         longest = max(mem, key=lambda m: sum(e - s + 1 for s, e in tx[m]["exons"]))
         src_ids = "|".join("%s:%s" % (tx[m]["cohort"], tx[m]["orig_id"]) for m in mem)
         reps.append({"chrom": chrom, "strand": strand, "exons": exons, "cohorts": cohorts,
                      "src_ids": src_ids, "n_members": len(mem), "longest": tx[longest]})
-    # genome order: chrom, first exon start, last exon end
+    # Sort the models in genome order: chromosome, first exon start, then last exon end.
     reps.sort(key=lambda r: (r["chrom"], r["exons"][0][0], r["exons"][-1][1]))
 
-    # output gtf: GENCODE as is (header lines dropped), then the merged models as <prefix>_NNNNNNNN
+    # Write the output GTF. GENCODE comes first, unchanged except that its header lines are dropped.
+    # The merged models follow, named <prefix>_NNNNNNNN.
     ref_tx = 0
     with open(args.output, "w") as out, open(args.provenance_out, "w") as prov:
         prov.write("new_id\tgene_id\tclass_code\tn_cohorts\tcohorts\tn_members\tsrc_ids\n")
@@ -149,7 +158,7 @@ def main():
             d = rep["longest"]
             nid = "%s_%08d" % (args.prefix, i)
             gid = d["gene_id"] or nid
-            # per-cohort locus ids restart in every cohort, so the cohort name is put in front
+            # Per-cohort locus ids restart in every cohort, so the cohort name is added in front.
             if COHORT_LOCUS_TAG in gid:
                 gid = "%s_%s" % (d["cohort"], gid)
             cc = d["class_code"] or "u"
@@ -167,7 +176,7 @@ def main():
     print("* wrote %d cross-cohort novel isoforms (%d shared by >1 cohort) + GENCODE -> %s"
           % (len(reps), shared, args.output))
 
-    # summary table: the funnel and the number of models per cohort combination
+    # Write the summary table: the funnel counts and the number of models for each combination of cohorts.
     by_combo = Counter(",".join(r["cohorts"]) for r in reps)
     rows = [("novel_in_%s" % name, n) for name, n in per_cohort.items()]
     rows += [("novel_in_total", n_loaded), ("novel_monoexon_dropped", n_mono),

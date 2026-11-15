@@ -48,15 +48,22 @@ sample-name prefixes (`TDP_1` -> `TDP`).
    group (no tool vote); gffcompare 0.12.10 for class codes
 5. SQANTI3 6.0.1 QC with the cohort's `SJ.out.tab`, CAGE peaks and polyA motifs; `sqanti3_filter.py
    rules -e` with `misc/sqanti_rules.json`
-6. GENCODE v50 plus the passed novels (`NOVEL_*`, gene from SQANTI's `associated_gene`; a fusion is
+6. SQANTI-browser 1.1.2 (Paniagua et al. 2026, bioRxiv, doi:10.64898/2026.05.25.727625) turns
+   `_corrected.gtf` and `_RulesFilter_classification.txt` into a UCSC track hub (hg38, chromosome sizes
+   from the genome `.fai`, the SQANTI CAGE peaks as a track, `--hub-name <data_code>`); `hubCheck`
+   validates it. Each model's details page carries its SQANTI columns, `filter_result` included
+   (`Isoform` kept, `Artifact` removed)
+7. GENCODE v50 plus the passed novels (`NOVEL_*`, gene from SQANTI's `associated_gene`; a fusion is
    led by its 5' gene), GTF + FASTA
-7. Cross-cohort: the cohorts' novels merged by `tama_merge` at the same tolerances, single-exon
+8. Cross-cohort: the cohorts' novels merged by `tama_merge` at the same tolerances, single-exon
    dropped, gene ids set by `cross_cohort_novel_genes.py` (`XNOVEL_*`, `XNOVELG_*` loci)
 
 QC: samtools, Picard and pychopper into MultiQC 1.25.1; NanoStat in `<data_code>_longread_qc_summary.tsv`; plus `<data_code>_read_length_hist.tsv.gz`.
 
 Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, `bambu_env`,
-`isoquant313`, `sqanti3_v6`, `tama_env` (Python 2), `multiqc`.
+`isoquant313`, `sqanti3_v6`, `tama_env` (Python 2), `multiqc`, `sqanti-browser` (the tool's
+`environment.yml`, then `pip install -e` of a clone of `github.com/ConesaLab/SQANTI-browser` at
+commit `8257746`).
 
 ## Outputs
 
@@ -65,3 +72,10 @@ Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, 
 positive controls, each found by its junction and traced stage by stage: knockdown UNC13A and STMN2 cryptic exons
 and KCNQ2 exon 5 skip; overexpression HYOU1, NUP93 and XPNPEP1 exon skips). Cross-cohort:
 `references/novel_isoform_references/<run_code>/isoforms_<run_code>.{gtf,fa}.gz`.
+
+UCSC track hub: `results/<run_code>/sqanti/<data_code>_ucsc_hub/` holds only the novel models that
+reached SQANTI, kept and removed. UCSC reads hubs only over public HTTP(S), so copy the whole folder
+to a public web server (GitHub raw URL, lab server, S3) and load the URL of its `hub.txt` under
+My Data > Track Hubs > Connected Hubs. `hg38/trix.ix` (the attribute search index) was 124 MB for tdpkd v9,
+above GitHub's 100 MB file limit. Models on unplaced scaffolds keep GENCODE names (`GL000195.1`),
+which UCSC hg38 does not know (`chrUn_GL000195v1`), so UCSC does not show them.

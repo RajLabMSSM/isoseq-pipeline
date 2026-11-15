@@ -130,6 +130,14 @@ sqanti_filter:
   time: 120
   queue: express
 
+# SQANTI-browser peaked at 0.4 GB and ran for 25 s on the v9 tdpkd calls (47,410 models). 4 GB leaves room for
+# larger builds.
+sqanti_browser:
+  cores: 1
+  mem: 4000
+  time: 60
+  queue: express
+
 cross_cohort_genes:
   cores: 1
   mem: 16000

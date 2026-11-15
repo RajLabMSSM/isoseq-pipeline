@@ -72,6 +72,7 @@ rule all:
         out_folder + "consensus/" + data_code + "_sanity_genes.tsv",
         out_folder + "consensus/" + data_code + "_tracking_numbers.tsv",
         out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
+        out_folder + "sqanti/" + data_code + "_ucsc_hub",
 
 
 rule decompress_ref_gtf:

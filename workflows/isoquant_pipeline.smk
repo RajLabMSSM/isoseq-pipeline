@@ -6,7 +6,8 @@ rule run_isoquant:
         ref  = genome,
         gtf  = ref_gtf
     output:
-        gtf = temp(out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.extended_annotation.gtf")
+        # The GTF is kept, not temporary, because the pooled stage in cross_cohort/Snakefile reads it after this run ends.
+        gtf = out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.extended_annotation.gtf"
     params:
         outdir = out_folder + "isoquant/{group}/",
         prefix = data_code + "_{group}"

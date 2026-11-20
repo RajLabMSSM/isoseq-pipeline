@@ -1,8 +1,9 @@
 # isoseq-pipeline
 
 Builds the long-read isoform atlas (`isoforms_<run_code>`): per-cohort isoform discovery from ONT cDNA
-reads, then one cross-cohort union with GENCODE. The code and configs are set for `v10`, which has not
-been run yet; the last completed build is `v9`.
+reads, then one pooled stage over both cohorts that removes GENCODE transcripts, merges, classifies against
+GENCODE v50, filters with SQANTI3 and appends GENCODE. The code and configs are set for `v10`, whose alignment and QC
+ran on 2026-11-10 and whose discovery and pooled stage have not run yet; the last completed build is `v9`.
 
 ## Run
 
@@ -15,16 +16,18 @@ sh ~/bin/snakejob -n -s ../../../pipelines/isoseq-pipeline/Snakefile -c tdp_nano
 snakejob_HPC -s ../../../pipelines/isoseq-pipeline/Snakefile -c tdp_nanopore_config.yaml           # submit
 ```
 
-`snakejob_HPC -n` submits; dry runs go through `snakejob -n`. Then the cross-cohort union:
+`snakejob_HPC -n` submits; dry runs go through `snakejob -n`. Then the pooled stage, once both cohort runs
+have finished:
 
 ```
 cd pipelines/isoseq-pipeline/cross_cohort
 snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
 ```
 
-`run_code` in `cross_cohort_config.yaml` sets the cohort inputs and the output folder and names, so a
-build stops on missing inputs instead of reusing an older one. `build_reference.sh` launches both
-cohorts and chains the union behind them (`-x`: union only).
+`cross_cohort_config.yaml` names the two cohort configs; the pooled stage reads the genome, annotation,
+SQANTI evidence, assembler output paths and junction files from them, and stops when a cohort config has
+another `run_code`. `cross_cohort_config_chm13.yaml` is the T2T copy (no tracking-table rows).
+`build_reference.sh` launches both cohorts and chains the pooled stage behind them (`-x`: pooled stage only).
 
 Metadata columns: `sample`, `condition`, `long_read_fastq`, `short_read_bam_path`. Groups are
 sample-name prefixes (`TDP_1` -> `TDP`).
@@ -43,20 +46,25 @@ sample-name prefixes (`TDP_1` -> `TDP`).
    - StringTie 3.0.3 `--mix -G` (pooled short-read BAM first; no `-t`)
    - IsoQuant 3.13.0 `sensitive_ont`, `--complete_genedb --clean_start --large_output none`, long reads only
    - Bambu 3.12.1, NDR 0.5, default discovery gates
-4. Union of tool x group models; models in GENCODE (`=`, `c`), single-exon and unstranded models
-   dropped; `tama_merge -m 0 -z 100 -d merge_dup`, one `no_cap` source per tool and
-   group (no tool vote); gffcompare 0.12.10 for class codes
-5. SQANTI3 6.0.1 QC with the cohort's `SJ.out.tab`, CAGE peaks and polyA motifs; `sqanti3_filter.py
-   rules -e` with `misc/sqanti_rules.json`
+Steps 4 onwards run once, in `cross_cohort/Snakefile`, on both cohorts together.
+
+4. The 12 assembler GTFs (3 tools x 2 groups x 2 cohorts) combined; transcripts carrying a GENCODE id
+   removed (Bambu and IsoQuant reference passthrough by `transcript_id`, StringTie `-G` matches by
+   `reference_id`); gffcompare 0.12.10 against GENCODE v50, models of class `=` or `c`, single-exon and
+   unstranded models dropped; `tama_merge -m 0 -z 100 -d merge_dup`, one `no_cap` source per tool,
+   cohort and group (no tool vote); the merged models classified against GENCODE v50 with gffcompare again,
+   `=` and `c` dropped again
+5. SQANTI3 6.0.1 QC with the `SJ.out.tab` files of both cohorts (10 tdpkd + 8 sun libraries), CAGE peaks
+   and polyA motifs; `sqanti3_filter.py rules -e` with `misc/sqanti_rules.json`. `min_sample_cov >= 2`
+   therefore counts libraries of either cohort
 6. SQANTI-browser 1.1.2 (Paniagua et al. 2026, bioRxiv, doi:10.64898/2026.05.25.727625) turns
    `_corrected.gtf` and `_RulesFilter_classification.txt` into a UCSC track hub (hg38, chromosome sizes
-   from the genome `.fai`, the SQANTI CAGE peaks as a track, `--hub-name <data_code>`); `hubCheck`
+   from the genome `.fai`, the SQANTI CAGE peaks as a track, `--hub-name isoforms_<run_code>`); `hubCheck`
    validates it. Each model's details page carries its SQANTI columns, `filter_result` included
    (`Isoform` kept, `Artifact` removed)
-7. GENCODE v50 plus the passed novels (`NOVEL_*`, gene from SQANTI's `associated_gene`; a fusion is
-   led by its 5' gene), GTF + FASTA
-8. Cross-cohort: the cohorts' novels merged by `tama_merge` at the same tolerances, single-exon
-   dropped, gene ids set by `cross_cohort_novel_genes.py` (`XNOVEL_*`, `XNOVELG_*` loci)
+7. GENCODE v50 plus the passed novels (`XNOVEL_*`, gene from SQANTI's `associated_gene`, SQANTI novel
+   genes as `XNOVELG_*` loci; a fusion is led by its 5' gene; `cohorts "tdpkd"`, `"sun"` or `"sun,tdpkd"`
+   per novel transcript), GTF + FASTA
 
 QC: samtools, Picard and pychopper into MultiQC 1.25.1; NanoStat in `<data_code>_longread_qc_summary.tsv`; plus `<data_code>_read_length_hist.tsv.gz`.
 
@@ -67,13 +75,18 @@ commit `8257746`).
 
 ## Outputs
 
-`results/<run_code>/consensus/`: `<data_code>.isoforms.{gtf,fa}.gz`, `_novel_provenance.tsv`,
-`_tool_overlap.tsv`, `_tracking_numbers.tsv` (the funnel), `_sanity_genes.tsv{,.events.tsv}` (the six TDP-43
-positive controls, each found by its junction and traced stage by stage: knockdown UNC13A and STMN2 cryptic exons
-and KCNQ2 exon 5 skip; overexpression HYOU1, NUP93 and XPNPEP1 exon skips). Cross-cohort:
-`references/novel_isoform_references/<run_code>/isoforms_<run_code>.{gtf,fa}.gz`.
+Per cohort, `results/<run_code>/`: alignments, long-read QC (`<data_code>_longread_qc_summary.tsv`,
+`_read_length_hist.tsv.gz`, `multiqc/`) and the assembler GTFs (`bambu/`, `isoquant/`, `stringtie3/`).
 
-UCSC track hub: `results/<run_code>/sqanti/<data_code>_ucsc_hub/` holds only the novel models that
+Pooled, `references/novel_isoform_references/<run_code>/`: `isoforms_<run_code>.{gtf,fa}.gz`,
+`cross_cohort_novel_provenance.tsv` (one row per novel model: gene, class code, tools, cohorts, `<cohort>_<tool>`
+and group flags), `tracking_numbers_final_numbers.tsv` (pooled funnel, `pooled_` metrics) and
+`tracking_numbers_<cohort>.tsv` (each cohort's share), `isoforms_<run_code>_sanity_genes.tsv{,.events.tsv}`
+(the six TDP-43 positive controls, each found by its junction and traced stage by stage, with the tools and
+cohorts that built it: knockdown UNC13A and STMN2 cryptic exons and KCNQ2 exon 5 skip; overexpression HYOU1,
+NUP93 and XPNPEP1 exon skips), `consensus/` (merge tables) and `sqanti/`.
+
+UCSC track hub: `sqanti/isoforms_<run_code>_ucsc_hub/` holds only the novel models that
 reached SQANTI, kept and removed. UCSC reads hubs only over public HTTP(S), so copy the whole folder
 to a public web server (GitHub raw URL, lab server, S3) and load the URL of its `hub.txt` under
 My Data > Track Hubs > Connected Hubs. `hg38/trix.ix` (the attribute search index) was 124 MB for tdpkd v9,

@@ -1,59 +1,54 @@
-gffcompare = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"     #Compare assembled transcripts with reference annotations
-tama_merge = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"                             # Merge transcript models with similar structures
-python2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"                              # Python interpreter used to run TAMA
-cons       = out_folder + "consensus/" + data_code
-
-sanity_gene_list  = "UNC13A,STMN2,KCNQ2,HYOU1,NUP93,XPNPEP1"
-sanity_event_list = ("UNC13A:chr19:17641557-17642413+17642542-17642844," # because both junctions are on either end of the cryptic exon
-                     "STMN2:chr8:79611215-79616821,"
-                     "KCNQ2:chr20:63439709-63444658,"
-                     "HYOU1:chr11:119052173-119052636,"
-                     "NUP93:chr16:56839070-56841704,"
-                     "XPNPEP1:chr10:109884149-109888048")
+# The pooled stage after discovery. It is included by cross_cohort/Snakefile, which defines OUT, NAME, REF_GTF,
+# GENOME, TOOL_GTFS, COHORT_NAMES, SCRIPTS, the tool paths and the sanity events. The per-cohort Snakefile no longer
+# includes it, so the cohorts meet once, on their raw assembler outputs.
+cons = OUT + "consensus/" + NAME
 
 
-# the three assembler gtfs of one group, by tool (so tool_gtfs("control") would give the 2 control GTFs)
-def tool_gtfs(g):
-    return {"bambu":     out_folder + "bambu/%s/%s_%s_extended_annotations.gtf" % (g, data_code, g),
-            "isoquant":  out_folder + "isoquant/%s/%s_%s/%s_%s.extended_annotation.gtf" % (g, data_code, g, data_code, g),
-            "stringtie": out_folder + "stringtie3/%s/%s_%s.stringtie.gtf" % (g, data_code, g)}
-
-
-# taking a union using tama_merge, which keeps any model from any one tool
+# Combine the assembler outputs of every cohort, remove the transcripts that carry a GENCODE id, and merge the
+# rest with tama_merge (Kuo et al. 2020). Each of the three tools ran on the pooled reads of each group of each
+# cohort, so the inputs are 3 tools x 2 groups x 2 cohorts = 12 GTFs.
+# Removal comes before the merge. Bambu and IsoQuant pass the whole of GENCODE through, and TAMA would otherwise
+# fold a novel model that differs from a known transcript only at its 5' end or within 100 bp at its 3' end into
+# that known transcript.
+# gffcompare 0.12.10 (Pertea and Pertea 2020) then classifies the remaining union against GENCODE. Models of class
+# = (same intron chain as a GENCODE transcript, which also catches a match that no tool labelled) and c (contained
+# in one) are left out of the merge, as are single-exon and unstranded models.
+# The merged models are classified against GENCODE again with gffcompare, because merging can change a model's
+# chain or ends. TAMA keeps every model built by any one source, so this is a union with no tool vote.
 rule consensus_isoforms:
     input:
-        gtfs = [p for g in groups for p in tool_gtfs(g).values()],
-        ref  = ref_gtf,
-        # both scripts are inputs (consensus_tama.py runs tama_merge), so editing either rebuilds the consensus
-        union_script = "scripts/build_union.py",
-        tama_script  = "scripts/consensus_tama.py"
+        gtfs = [path for _tool, _cohort, _group, path in TOOL_GTFS],
+        ref  = REF_GTF,
+        # Both scripts are inputs, so editing either one rebuilds the consensus.
+        union_script = SCRIPTS + "/build_union.py",
+        tama_script  = SCRIPTS + "/consensus_tama.py"
     output:
         gtf      = cons + "_merged_consensus.gtf",
         venn_tsv = cons + "_tool_overlap.tsv",
         stats    = cons + "_consensus_stats.tsv",
         member   = cons + "_tool_membership.tsv",
-        # gffcompare's union-vs-reference gtf; kept and declared because rule sanity_genes reads it
+        # gffcompare's classification of the union is kept and declared, because rule sanity_genes reads it.
         annotated = cons + "_gffcmp.annotated.gtf"
     params:
         prefix     = cons + "_gffcmp",
         union      = cons + "_union.gtf",
-        # one --gtf <tool> <group> <path> argument per tool and group
-        union_args = " ".join("--gtf %s %s %s" % (t, g, p) for g in groups for t, p in tool_gtfs(g).items()),
-        workdir    = out_folder + "consensus/tama_tmp"
+        # One --gtf <tool> <cohort> <group> <path> argument per assembler output.
+        union_args = " ".join("--gtf %s %s %s %s" % entry for entry in TOOL_GTFS),
+        workdir    = OUT + "consensus/tama_tmp"
     shell:
         """
         python {input.union_script} {params.union_args} --reference {input.ref} -o {params.union}
-        {gffcompare} -r {input.ref} -o {params.prefix} {params.union}
+        {GFFCOMPARE} -r {input.ref} -o {params.prefix} {params.union}
         python {input.tama_script} \
         --union {params.union} \
         --gffcmp-prefix {params.prefix} \
         --reference {input.ref} \
-        --junction-wobble {config[consensus_junction_wobble]} \
-        --tes-tol {config[consensus_tes_tol]} \
+        --junction-wobble {config[wobble]} \
+        --tes-tol {config[tes_tol]} \
         --exclude-codes '=,c' \
-        --tama-merge {tama_merge} \
-        --python2 {python2} \
-        --gffcompare {gffcompare} \
+        --tama-merge {TAMA} \
+        --python2 {PYTHON2} \
+        --gffcompare {GFFCOMPARE} \
         --workdir {params.workdir} \
         --overlap-out {output.venn_tsv} \
         --membership-out {output.member} \
@@ -63,19 +58,23 @@ rule consensus_isoforms:
         """
 
 
-# the reference verbatim plus the SQANTI-passed novels, renamed NOVEL_*, gene from SQANTI's associated_gene
+# Write GENCODE unchanged followed by the novel models that passed SQANTI, renamed XNOVEL_NNNNNNNN.
+# Each novel model's gene is SQANTI's associated_gene, and a SQANTI novel gene becomes a new XNOVELG_ locus. One
+# SQANTI run covers both cohorts, so every locus id is unique in the build.
+# Each novel transcript keeps the cohorts attribute (sun, tdpkd or sun,tdpkd) of the cohorts whose assemblies built it.
+# The provenance table holds one row per novel model with its gene, class code, tools, cohorts and groups.
 rule reference_with_novel:
     input:
         merged = cons + "_merged_consensus.gtf",
         member = cons + "_tool_membership.tsv",
-        keep   = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
-        sqanti = out_folder + "sqanti/" + data_code + "_classification.txt",
-        ref    = ref_gtf,
-        # the script is an input, so editing it re-runs this step
-        script = "scripts/build_reference_with_novel.py"
+        keep   = OUT + "sqanti/" + NAME + "_pass_isoforms.txt",
+        sqanti = OUT + "sqanti/" + NAME + "_classification.txt",
+        ref    = REF_GTF,
+        # The script is an input, so editing it re-runs this step.
+        script = SCRIPTS + "/build_reference_with_novel.py"
     output:
-        gtf  = temp(cons + ".isoforms.gtf"),
-        prov = cons + "_novel_provenance.tsv"
+        gtf  = temp(OUT + NAME + ".gtf"),
+        prov = OUT + "cross_cohort_novel_provenance.tsv"
     shell:
         """
         python {input.script} \
@@ -85,66 +84,61 @@ rule reference_with_novel:
         --exclude-codes '=,c' \
         --keep-list {input.keep} \
         --membership {input.member} \
+        --prefix XNOVEL \
         --provenance-out {output.prov} \
         -o {output.gtf}
         """
 
 
-# transcript sequences of the cohort's final gtf
-rule reference_fasta:
-    input:
-        gtf    = cons + ".isoforms.gtf",
-        genome = genome
-    output:
-        fa = cons + ".isoforms.fa.gz"
-    params:
-        tmp = cons + ".isoforms.fa"
-    shell:
-        """
-        gffread -w {params.tmp} -g {input.genome} {input.gtf}
-        gzip -nc {params.tmp} > {output.fa}
-        rm -f {params.tmp}
-        """
-
-
+# Compress the final GTF.
 rule compress_reference_gtf:
     input:
-        gtf = cons + ".isoforms.gtf"
+        gtf = OUT + NAME + ".gtf"
     output:
-        gz = cons + ".isoforms.gtf.gz"
+        gz = OUT + NAME + ".gtf.gz"
     shell:
         "gzip -nc {input.gtf} > {output.gz}"
 
 
-# finds the isoforms after SQANTI (GENCODE plus the novels that passed) that carry each control junction, and traces
-# each event through union -> consensus -> SQANTI -> final gtf to show where it is kept or lost.
-# STMN2, KCNQ2, NUP93 and XPNPEP1 are in GENCODE v50, so they always match in the final gtf: for those,
-# assembled_by shows whether our data built the event. An annotated event scores 0 novel, so novel counts alone
-# are not a recovery test
+# Write the transcript sequences of the final GTF with gffread. This FASTA is the input of the salmon index.
+rule reference_fasta:
+    input:
+        gtf = OUT + NAME + ".gtf.gz",
+        # The salmon-pipeline gffread wrapper is an input, so editing it rebuilds the FASTA.
+        script = FASTA_SH
+    output:
+        fa = OUT + NAME + ".fa.gz"
+    shell:
+        "bash {input.script} {input.gtf} {GENOME} {output.fa}"
+
+
+# Find the isoforms of the final GTF that carry each positive-control junction, and trace each event through
+# union, consensus, SQANTI and final GTF to show where it is kept or lost, and which tools and cohorts built it.
+# STMN2, KCNQ2, NUP93 and XPNPEP1 are in GENCODE v50, so they always match in the final GTF. For those,
+# assembled_by and assembled_in show whether our data built the event. An annotated event scores 0 novel, so novel
+# counts alone are not a recovery test.
 rule sanity_genes:
     input:
-        gtf  = cons + ".isoforms.gtf",
-        ref  = ref_gtf,
+        gtf  = OUT + NAME + ".gtf",
+        ref  = REF_GTF,
         cons = cons + "_merged_consensus.gtf",
-        sqp  = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
-        sqr  = out_folder + "sqanti/" + data_code + "_filtering_reasons.txt",
-        # the union as gffcompare classified it, written by rule consensus_isoforms; an input, so snakemake
-        # rebuilds it if it is missing and re-runs this step when it changes
+        sqp  = OUT + "sqanti/" + NAME + "_pass_isoforms.txt",
+        sqr  = OUT + "sqanti/" + NAME + "_filtering_reasons.txt",
         union = cons + "_gffcmp.annotated.gtf",
-        # the script is an input, so editing it re-runs this step
-        script = "scripts/check_genes.py"
+        # The script is an input, so editing it re-runs this step.
+        script = SCRIPTS + "/check_genes.py"
     output:
-        tsv    = cons + "_sanity_genes.tsv",
-        events = cons + "_sanity_genes.tsv.events.tsv"
+        tsv    = OUT + NAME + "_sanity_genes.tsv",
+        events = OUT + NAME + "_sanity_genes.tsv.events.tsv"
     shell:
         """
         python {input.script} \
         --reference {input.ref} \
         --gtf {input.gtf} \
-        --genes '{sanity_gene_list}' \
-        --prefix NOVEL \
+        --genes '{SANITY_GENES}' \
+        --prefix XNOVEL \
         --source ONT \
-        --events '{sanity_event_list}' \
+        --events '{SANITY_EVENTS}' \
         --event-tol 0 \
         --union-gtf {input.union} \
         --consensus-gtf {input.cons} \
@@ -154,18 +148,19 @@ rule sanity_genes:
         """
 
 
-# the cohort's funnel numbers (raw -> consensus -> SQANTI -> final) as metric<TAB>value
-rule tracking_numbers:
+# Write the funnel numbers (raw, consensus, SQANTI, final) of the whole build. Every metric name starts with
+# pooled_, so these rows stay apart from each cohort's own rows in the project tracking table.
+rule tracking_numbers_pooled:
     input:
         stats  = cons + "_consensus_stats.tsv",
         member = cons + "_tool_membership.tsv",
-        sqanti = out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
-        keep   = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
-        ref    = ref_gtf,
-        # the script is an input, so editing it re-runs this step
-        script = "scripts/tracking_numbers.py"
+        sqanti = OUT + "sqanti/" + NAME + "_RulesFilter_classification.txt",
+        keep   = OUT + "sqanti/" + NAME + "_pass_isoforms.txt",
+        ref    = REF_GTF,
+        # The script is an input, so editing it re-runs this step.
+        script = SCRIPTS + "/tracking_numbers.py"
     output:
-        tsv = cons + "_tracking_numbers.tsv"
+        tsv = OUT + "tracking_numbers_final_numbers.tsv"
     shell:
         """
         python {input.script} \
@@ -174,6 +169,54 @@ rule tracking_numbers:
         --sqanti-classification {input.sqanti} \
         --pass-ids {input.keep} \
         --reference {input.ref} \
-        --cohort {data_code} \
+        --cohort pooled \
+        --metric-prefix pooled_ \
         -o {output.tsv}
+        """
+
+
+# Write one cohort's share of the funnel: its own assembler counts, and the merged models that its assemblies built.
+rule tracking_numbers_cohort:
+    input:
+        stats  = cons + "_consensus_stats.tsv",
+        member = cons + "_tool_membership.tsv",
+        sqanti = OUT + "sqanti/" + NAME + "_RulesFilter_classification.txt",
+        keep   = OUT + "sqanti/" + NAME + "_pass_isoforms.txt",
+        ref    = REF_GTF,
+        # The script is an input, so editing it re-runs this step.
+        script = SCRIPTS + "/tracking_numbers.py"
+    output:
+        tsv = OUT + "tracking_numbers_{cohort}.tsv"
+    wildcard_constraints:
+        cohort = "|".join(COHORT_NAMES)
+    shell:
+        """
+        python {input.script} \
+        --stats {input.stats} \
+        --membership {input.member} \
+        --sqanti-classification {input.sqanti} \
+        --pass-ids {input.keep} \
+        --reference {input.ref} \
+        --cohort {wildcards.cohort} \
+        --only {wildcards.cohort} \
+        -o {output.tsv}
+        """
+
+
+# Write this build's funnel numbers into the project tracking table. Each cohort gets its own share plus the pooled
+# rows. A build without a tracking_numbers key in its config, such as the T2T comparison build, skips this step, so
+# it cannot replace the hg38 rows.
+rule upsert_tracking:
+    input:
+        pooled = OUT + "tracking_numbers_final_numbers.tsv",
+        cohort = expand(OUT + "tracking_numbers_{cohort}.tsv", cohort=COHORT_NAMES),
+        # The script is an input, so editing it re-runs this step.
+        script = SCRIPTS + "/upsert_tracking_numbers.py"
+    output:
+        done = touch(OUT + "tracking_numbers.done")
+    params:
+        cohort = " ".join("%s=%stracking_numbers_%s.tsv" % (c, OUT, c) for c in COHORT_NAMES)
+    shell:
+        """
+        python {input.script} {config[tracking_numbers]} {config[run_code]} {input.pooled} {params.cohort}
         """

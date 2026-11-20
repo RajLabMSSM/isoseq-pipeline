@@ -1,28 +1,20 @@
-import glob
-import os
-
-# Path to the SQANTI rules filter definition, which is kept in the pipeline repo.
-sqanti_rules = os.path.join(workflow.basedir, "misc", "sqanti_rules.json")
-# Collect the STAR junction files that SQANTI uses to measure short-read support for each junction.
-# Samples listed in exclude_samples are left out. For tdpkd these are TDP-5 (aberrant differentiation)
-# and CTRL-4 (a low-depth outlier).
-# The sample id is the part of the file name before the first dot, as in <sample>.SJ.out.tab.
-sqanti_sj =[f for f in sorted(glob.glob(os.path.join(junction_folder, "*.SJ.out.tab")))
-             if os.path.basename(f).split(".")[0] not in excluded_samples]
+# SQANTI3 on the pooled novel models (Pardo-Palacios et al. 2024). This file is included by cross_cohort/Snakefile,
+# which defines OUT, NAME, REF_GTF, GENOME, SQANTI_SJ, SQANTI_RULES and the shared genome settings.
+sq = OUT + "sqanti/" + NAME
 
 
 # Write only the novel consensus models as SQANTI's input.
-# Models with gffcompare class code = (same intron chain as a reference transcript) or c (contained in one)
-# are left out.
+# Models with gffcompare class code = (same intron chain as a reference transcript) or c (contained in one) after
+# the merge are left out.
 # The models keep their merged ids, so SQANTI's pass list maps straight back onto the merged consensus.
 rule novel_consensus_gtf:
     input:
         merged = cons + "_merged_consensus.gtf",
-        ref    = ref_gtf,
+        ref    = REF_GTF,
         # The script is listed as an input, so editing it re-runs this step.
-        script = "scripts/build_reference_with_novel.py"
+        script = SCRIPTS + "/build_reference_with_novel.py"
     output:
-        gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf"
+        gtf = sq + "_novel_consensus.gtf"
     shell:
         """
         python {input.script} \
@@ -34,8 +26,11 @@ rule novel_consensus_gtf:
         """
 
 
-# Run SQANTI3 quality control on the novel models.
-# The -c option gives every junction its short-read support (min_sample_cov), which the rules filter uses.
+# Run SQANTI3 quality control on the pooled novel models.
+# The -c option gives every junction its short-read support. SQANTI counts, per junction, the STAR SJ.out.tab files
+# with at least one uniquely mapped read across it (sample_with_cov). A model's min_sample_cov is the lowest of these
+# counts over its junctions. The files are those of both cohorts (10 tdpkd and 8 sun libraries), so a model built in
+# one cohort can reach min_sample_cov >= 2 on short reads of the other cohort.
 # The CAGE peaks and the polyA motif list only add information to the QC report. No filter rule reads them.
 # Old genePred files are removed first, because SQANTI otherwise reuses a stale one.
 # One thread is enough. The input is a GTF, so SQANTI aligns nothing and has no work to split.
@@ -43,29 +38,29 @@ rule novel_consensus_gtf:
 # SQANTI also writes a _corrected.fasta file. Nothing reads it, so it is not declared as an output.
 rule sqanti_qc:
     input:
-        gtf = out_folder + "sqanti/" + data_code + "_novel_consensus.gtf",
-        ref = ref_gtf,
-        fa  = genome,
-        sj  = sqanti_sj
+        gtf = sq + "_novel_consensus.gtf",
+        ref = REF_GTF,
+        fa  = GENOME,
+        sj  = SQANTI_SJ
     output:
-        classification = out_folder + "sqanti/" + data_code + "_classification.txt",
-        corrected_gtf  = out_folder + "sqanti/" + data_code + "_corrected.gtf"
+        classification = sq + "_classification.txt",
+        corrected_gtf  = sq + "_corrected.gtf"
     params:
-        outdir = out_folder + "sqanti/",
-        sj     = ",".join(sqanti_sj)
+        outdir = OUT + "sqanti/",
+        sj     = ",".join(SQANTI_SJ)
     threads: 1
     shell:
         """
         conda activate sqanti3_v6
-        rm -f {params.outdir}{data_code}_corrected.genePred {params.outdir}refAnnotation_{data_code}.genePred
+        rm -f {params.outdir}{NAME}_corrected.genePred {params.outdir}refAnnotation_{NAME}.genePred
         sqanti3_qc.py \\
         --isoforms {input.gtf} \\
         --refGTF {input.ref} \\
         --refFasta {input.fa} \\
         -c '{params.sj}' \\
-        --CAGE_peak {config[sqanti_cage_peak]} --polyA_motif_list {config[sqanti_polya_motifs]} \\
+        --CAGE_peak {SHARED[sqanti_cage_peak]} --polyA_motif_list {SHARED[sqanti_polya_motifs]} \\
         -d {params.outdir} \\
-        -o {data_code} \\
+        -o {NAME} \\
         -t {threads}
         """
 
@@ -73,7 +68,7 @@ rule sqanti_qc:
 # Filter the SQANTI calls with the rules in sqanti_rules.json.
 # Full splice matches (FSM) are checked for intra-priming only.
 # Every other model must also have only canonical junctions, each supported by short reads in at least
-# 2 samples (min_sample_cov >= 2).
+# 2 libraries of either cohort (min_sample_cov >= 2).
 # The RTS_stage rule is left out, because it removes the UNC13A cryptic exon.
 # The -e option (--filter_mono_exonic) is a safeguard. The consensus step already drops single-exon models,
 # so it removes nothing today, but it would catch them if that step changed.
@@ -83,22 +78,23 @@ rule sqanti_qc:
 # The filtering reasons file is read by rule sanity_genes.
 rule sqanti_filter:
     input:
-        classification = out_folder + "sqanti/" + data_code + "_classification.txt"
+        classification = sq + "_classification.txt",
+        rules = SQANTI_RULES
     output:
-        classification = out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
-        pass_ids       = out_folder + "sqanti/" + data_code + "_pass_isoforms.txt",
-        reasons        = out_folder + "sqanti/" + data_code + "_filtering_reasons.txt"
+        classification = sq + "_RulesFilter_classification.txt",
+        pass_ids       = sq + "_pass_isoforms.txt",
+        reasons        = sq + "_filtering_reasons.txt"
     params:
-        outdir = out_folder + "sqanti/"
+        outdir = OUT + "sqanti/"
     shell:
         """
         conda activate sqanti3_v6
         sqanti3_filter.py rules \\
         --sqanti_class {input.classification} \\
-        -j {sqanti_rules} \\
+        -j {input.rules} \\
         -e \\
         -d {params.outdir} \\
-        -o {data_code}
+        -o {NAME}
         """
 
 
@@ -114,21 +110,24 @@ rule sqanti_filter:
 # Chromosome sizes are taken from the genome index. Without them the tool guesses each length from the furthest feature.
 # GENCODE names unplaced scaffolds like GL000195.1, while UCSC hg38 names them like chrUn_GL000195v1. Models on these
 # scaffolds stay in the bigBed files, but UCSC hg38 cannot display them (83 of 47,410 models in tdpkd v9).
-# The hub name is the data code, so hubs of different cohorts can be loaded together and told apart.
+# The hub name is the build name, such as isoforms_v10.
 # hubCheck then checks the hub and opens every bigBed file, and the job fails if it reports a problem.
 # hubCheck gets hub.txt by its absolute path, because it looks for the track files in the wrong folder from a relative one.
 # UCSC reads a hub only over public HTTP, so the hub folder must be copied to a public web server by hand (see README).
 rule sqanti_browser:
     input:
-        gtf            = out_folder + "sqanti/" + data_code + "_corrected.gtf",
-        classification = out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
-        fai            = genome + ".fai",
-        cage           = config['sqanti_cage_peak']
+        gtf            = sq + "_corrected.gtf",
+        classification = sq + "_RulesFilter_classification.txt",
+        fai            = GENOME + ".fai",
+        cage           = SHARED["sqanti_cage_peak"]
     output:
-        hub         = directory(out_folder + "sqanti/" + data_code + "_ucsc_hub"),
-        chrom_sizes = temp(out_folder + "sqanti/" + data_code + "_chrom.sizes")
+        hub         = directory(sq + "_ucsc_hub"),
+        chrom_sizes = temp(sq + "_chrom.sizes")
     params:
-        hub_txt = os.path.abspath(out_folder + "sqanti/" + data_code + "_ucsc_hub/hub.txt")
+        hub_txt = os.path.abspath(sq + "_ucsc_hub/hub.txt"),
+        # UCSC's name for the genome the models sit on. hg38 cohort configs leave ucsc_genome out, and T2T configs
+        # set it to hs1, which is UCSC's name for T2T-CHM13v2.0.
+        ucsc_genome = SHARED["ucsc_genome"]
     threads: 1
     shell:
         """
@@ -139,8 +138,8 @@ rule sqanti_browser:
         --classification {input.classification} \\
         --CAGE-peak {input.cage} \\
         --chrom-sizes {output.chrom_sizes} \\
-        --genome hg38 \\
-        --hub-name {data_code} \\
+        --genome {params.ucsc_genome} \\
+        --hub-name {NAME} \\
         --output {output.hub}
         hubCheck {params.hub_txt}
         """

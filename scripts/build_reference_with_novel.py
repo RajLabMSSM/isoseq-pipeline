@@ -3,7 +3,8 @@
 
 The reference GTF is copied unchanged. The novel models added after it are those whose class code is not
 in --exclude-codes and, when --keep-list is given, whose id is on that list.
-Each novel model is renamed <prefix>_NNNNNN and gets the source <source>.
+Each novel model is renamed <prefix>_NNNNNNNN and gets the source <source>. It keeps the cohorts attribute of the
+merged consensus, which names the cohorts whose assemblies built it.
 
 Each model's gene is SQANTI3's associated_gene. A model SQANTI calls a novelGene gets a new
 <prefix>G_NNNNNN locus.
@@ -23,7 +24,7 @@ from collections import namedtuple
 # It also records how the gene was assigned (the SQANTI structural category) and any further genes it bridges.
 # Under --no-rename the assignment is only a placeholder, because that mode never writes it.
 NovelRecord = namedtuple("NovelRecord",
-                         ["new_tid", "gene_id", "ref_gene", "class_code", "gene_assignment", "bridging"])
+                         ["new_tid", "gene_id", "ref_gene", "class_code", "gene_assignment", "bridging", "cohorts"])
 # The membership table starts with transcript_id, class_code and is_novel.
 # The columns after these are the per-tool columns that are copied into the provenance table.
 MEMBERSHIP_FIRST_CARRIED_COLUMN = 3
@@ -112,6 +113,7 @@ def main():
     cc_of = {}
     ref_gene_of = {}
     strand_of = {}
+    cohorts_of = {}
     for c in gtf_records(args.merged, ("transcript",)):
         cc = attr(c[8], "class_code")
         tid = attr(c[8], "transcript_id")
@@ -121,6 +123,11 @@ def main():
         cc_of[tid] = cc
         ref_gene_of[tid] = tx2gene.get(base(attr(c[8], "cmp_ref"))) or "NA"
         strand_of[tid] = c[6]
+        # The cohorts whose assemblies built the model, written by consensus_tama.py. Every merged model carries
+        # it, so a missing value stops the run instead of writing an empty attribute.
+        cohorts_of[tid] = attr(c[8], "cohorts")
+        if not cohorts_of[tid]:
+            raise SystemExit("merged model %s has no cohorts attribute" % tid)
     # Record the gene id that TAMA gave each kept model. Under --no-rename this id is written unchanged.
     merged_gene = {}
     for c in gtf_records(args.merged, ("exon",)):
@@ -162,22 +169,23 @@ def main():
             genes.insert(0, genes.pop(genes.index(lead)))
         return genes[0], category, genes[1:]
 
-    # Build one record per kept model. Each model is renamed <prefix>_NNNNNN and placed on its gene.
-    # With --no-rename the model keeps its merged id and TAMA gene.
+    # Build one record per kept model. Each model is renamed <prefix>_NNNNNNNN, the eight-digit form of the
+    # published XNOVEL ids, and placed on its gene. With --no-rename the model keeps its merged id and TAMA gene.
     tx_map = {}
     for n, tid in enumerate(order, start=1):
         if args.no_rename:
-            tx_map[tid] = NovelRecord(tid, merged_gene[tid], ref_gene_of[tid], cc_of[tid], "unclassified", [])
+            tx_map[tid] = NovelRecord(tid, merged_gene[tid], ref_gene_of[tid], cc_of[tid], "unclassified", [],
+                                      cohorts_of[tid])
         else:
             gid, how, bridging = place(tid)
-            tx_map[tid] = NovelRecord("%s_%06d" % (args.prefix, n), gid, ref_gene_of[tid], cc_of[tid],
-                                      how, bridging)
+            tx_map[tid] = NovelRecord("%s_%08d" % (args.prefix, n), gid, ref_gene_of[tid], cc_of[tid],
+                                      how, bridging, cohorts_of[tid])
 
     # Write the provenance table: each new record plus the per-tool membership columns of its merged model.
     if args.provenance_out and args.membership:
         with open(args.membership) as fh:
-            # Skip transcript_id, class_code and is_novel.
-            # Carry the remaining columns, which are n_tools and one column per tool.
+            # Skip transcript_id, class_code and is_novel. Carry the remaining columns, which are the tool, cohort,
+            # cohort x tool and group columns of consensus_tama.py.
             carry = fh.readline().rstrip("\n").split("\t")[MEMBERSHIP_FIRST_CARRIED_COLUMN:]
             member = {}
             for line in fh:
@@ -209,8 +217,9 @@ def main():
             c[1] = args.source
             c[8] = 'gene_id "%s"; transcript_id "%s";' % (rec.gene_id, rec.new_tid)
             if c[2] == "transcript" and not args.no_rename:
-                c[8] += (' ref_gene "%s"; class_code "%s"; gene_assignment "%s"; bridging "%s";'
-                         % (rec.ref_gene, rec.class_code, rec.gene_assignment, ",".join(rec.bridging)))
+                c[8] += (' ref_gene "%s"; class_code "%s"; gene_assignment "%s"; bridging "%s"; cohorts "%s";'
+                         % (rec.ref_gene, rec.class_code, rec.gene_assignment, ",".join(rec.bridging),
+                            rec.cohorts))
             out.write("\t".join(c) + "\n")
 
     # Print a summary of how many models sit on known genes rather than a new <prefix>G_ locus.

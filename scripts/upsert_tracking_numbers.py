@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Add one isoseq build to the project tracking table, replacing the older isoseq rows of each cohort.
 
-Each cohort gets its own funnel rows, plus the cross-cohort rows repeated under its name.
+Each cohort gets its own share of the funnel, plus the pooled rows (metric names starting with pooled_) repeated
+under its name.
 
-usage: upsert_tracking_numbers.py <tracking_numbers.tsv> <run_code> <union_tracking.tsv> <cohort>=<tracking.tsv> ..."""
+usage: upsert_tracking_numbers.py <tracking_numbers.tsv> <run_code> <pooled_tracking.tsv> <cohort>=<tracking.tsv> ..."""
 import csv
 import fcntl
 import os
@@ -15,7 +16,7 @@ HEADER = ["cohort", "metric", "value"]
 OWN_PREFIXES = ("raw_", "novel_", "consensus_", "collapsed_", "overlap_", "sqanti_", "lr_specific",
                 "sr_supported", "final_", "reference_transcripts", "pct_", "crosscohort_",
                 "cross_cohort_", "sr_reference_", "gencode_", "by_combo", "single_cohort",
-                "shared_by", "isoseq_run_code")
+                "shared_by", "isoseq_run_code", "pooled_")
 
 
 def read_metrics(path):

@@ -168,7 +168,8 @@ def main():
 
     # event trace: one row per event, with the stage at which it was lost (or RECOVERED)
     epath = args.output + ".events.tsv"
-    header = ["gene", "event", "in_gencode", "assembled_by", "n_consensus", "sqanti_kept", "sqanti_dropped",
+    header = ["gene", "event", "in_gencode", "assembled_by", "assembled_in", "n_consensus", "sqanti_kept",
+              "sqanti_dropped",
               "drop_reason", "in_final_gtf", "final_via", "final_isoforms", "verdict"]
     # echoed to the log after writing: gene, event, verdict of each row (header included)
     log_rows = [(header[0], header[1], header[-1])]
@@ -178,6 +179,8 @@ def main():
             loc = ev["label"]
             # assembler that built it: the <tool>__ prefix of union ids, else the gtf source column
             tools = sorted({t.split("__")[0] if "__" in t else src.lower() for t, src in in_union[i].items()})
+            # The cohort whose assembly built it is the second part of a union id, <tool>__<cohort>__<group>__<id>.
+            cohorts = sorted({t.split("__")[1] for t in in_union[i] if t.count("__") >= 3})
             # consensus models carrying it that SQANTI kept or dropped
             kept = [t for t in in_cons[i] if t in passed]
             dropped = [t for t in in_cons[i] if t not in passed]
@@ -199,8 +202,8 @@ def main():
                 verdict = "LOST_AT_CONSENSUS"
             # the ids of the isoforms after SQANTI that carry the event
             final_ids = ",".join(sorted(in_final[i])) or "-"
-            out.write("%s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n" % (
-                ev["gene"], loc, "yes" if in_ref[i] else "no", ",".join(tools) or "-",
+            out.write("%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n" % (
+                ev["gene"], loc, "yes" if in_ref[i] else "no", ",".join(tools) or "-", ",".join(cohorts) or "-",
                 len(in_cons[i]), len(kept), len(dropped), ";".join(reasons) or "-",
                 "yes" if in_final[i] else "no", via, final_ids, verdict))
             log_rows.append((ev["gene"], loc, verdict))

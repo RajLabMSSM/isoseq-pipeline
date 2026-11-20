@@ -1,0 +1,13 @@
+# The T2T-CHM13v2.0 copy of the pooled stage, for the T2T versus hg38 comparison panel. Every setting is the hg38
+# build's, and the genome files come from the two _chm13 cohort configs. It writes no rows to the project tracking
+# table, so it cannot replace the hg38 numbers.
+run_code: "v10_chm13"
+reference_root: "/sc/arion/projects/als-omics/brooke-phd-thesis/references/novel_isoform_references/"
+
+cohorts:
+  tdpkd: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/tdp_nanopore_config_chm13.yaml"
+  sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/sun_tdp_overexpression_nanopore_config_chm13.yaml"
+
+# tama_merge tolerances, the same as the hg38 build.
+wobble: 0
+tes_tol: 100

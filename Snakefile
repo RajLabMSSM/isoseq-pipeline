@@ -10,6 +10,7 @@ shell.prefix(
     'module purge; '
     'conda activate isoseq-pipeline; '
 )
+import os
 import pandas as pd
 
 data_code       = config['data_code']
@@ -48,14 +49,17 @@ def short_bam(group):
     return out_folder + "stringtie3/%s/%s_%s.pooled.short.bam" % (group, data_code, group)
 
 
+# The cohort run covers read preparation, alignment, long-read QC and discovery with the three assemblers.
+# Everything after discovery (removal of GENCODE transcripts, merging, gffcompare classification, SQANTI and the
+# final reference) runs once on both cohorts together in cross_cohort/Snakefile.
 include: "workflows/qc_pipeline.smk"
 include: "workflows/bambu_pipeline.smk"
 include: "workflows/isoquant_pipeline.smk"
 include: "workflows/stringtie_pipeline.smk"
-include: "workflows/consensus_pipeline.smk"
-include: "workflows/sqanti_pipeline.smk"
 
 
+# The final outputs of a cohort run: the alignments, the long-read QC, and the GTF of each assembler for each group,
+# which are the inputs of the pooled stage.
 rule all:
     input:
         expand(out_folder + "{sample}/alignment/{sample}.aligned.cram",      sample=samples),
@@ -64,15 +68,9 @@ rule all:
         out_folder + data_code + "_longread_qc_summary.tsv",
         out_folder + "multiqc/multiqc_report.html",
         expand(out_folder + "bambu/{group}/" + data_code + "_{group}_extended_annotations.gtf", group=groups),
+        expand(out_folder + "isoquant/{group}/" + data_code + "_{group}/" + data_code + "_{group}.extended_annotation.gtf",
+               group=groups),
         expand(out_folder + "stringtie3/{group}/" + data_code + "_{group}.stringtie.gtf", group=groups),
-        out_folder + "consensus/" + data_code + ".isoforms.gtf.gz",
-        out_folder + "consensus/" + data_code + ".isoforms.fa.gz",
-        out_folder + "consensus/" + data_code + "_tool_overlap.tsv",
-        out_folder + "consensus/" + data_code + "_novel_provenance.tsv",
-        out_folder + "consensus/" + data_code + "_sanity_genes.tsv",
-        out_folder + "consensus/" + data_code + "_tracking_numbers.tsv",
-        out_folder + "sqanti/" + data_code + "_RulesFilter_classification.txt",
-        out_folder + "sqanti/" + data_code + "_ucsc_hub",
 
 
 rule decompress_ref_gtf:

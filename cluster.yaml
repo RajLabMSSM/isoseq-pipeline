@@ -118,9 +118,11 @@ consensus_isoforms:
   queue: premium
 
 # the input is a gtf, so sqanti aligns nothing: one core
+# v9 peaked at 7.1 GB for one cohort (47,410 models, 10 junction files). The pooled run holds both cohorts' models
+# and 18 junction files, so the memory is doubled from 16 GB.
 sqanti_qc:
   cores: 1
-  mem: 16000
+  mem: 32000
   time: 720
   queue: premium
 
@@ -138,13 +140,7 @@ sqanti_browser:
   time: 60
   queue: express
 
-cross_cohort_genes:
-  cores: 1
-  mem: 16000
-  time: 120
-  queue: express
-
-cross_cohort_fasta:
+reference_fasta:
   cores: 2
   mem: 12000
   time: 120

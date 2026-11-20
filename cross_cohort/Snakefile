@@ -1,168 +1,138 @@
-# Run this after every cohort's own pipeline has finished: snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
+# The pooled stage of the isoform atlas. Run it after every cohort's own pipeline has finished discovery:
+#   snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
+# Each cohort runs StringTie, IsoQuant and Bambu on its own reads, because the cohorts differ in flow cell, basecaller
+# and library kit. This stage then combines the 12 assembler GTFs of both cohorts, removes the transcripts that carry
+# a GENCODE id, merges the rest with tama_merge, classifies the merged models against GENCODE v50 with gffcompare,
+# filters them once with SQANTI3 on the short reads of both cohorts, and writes GENCODE plus the passed novels.
+import glob
 import os
+import yaml
 
-configfile: "cross_cohort_config.yaml"
+# Load the conda shell functions before every shell command, as the cohort Snakefile does, so that rules can
+# activate the SQANTI and SQANTI-browser environments. PS1 is set empty first, because conda activate reads it
+# under bash strict mode and a batch job does not set it.
+shell.prefix(
+    'export PS1=""; '
+    'ml anaconda3; '
+    'CONDA_BASE=$(conda info --base); '
+    'source $CONDA_BASE/etc/profile.d/conda.sh; '
+    'module purge; '
+    'conda activate isoseq-pipeline; '
+)
 
-# This Snakefile sits in isoseq-pipeline/cross_cohort/, so the isoseq scripts are one folder up.
+# This Snakefile sits in isoseq-pipeline/cross_cohort/, so the isoseq scripts and workflows are one folder up.
 # The salmon-pipeline gffread wrapper sits next to isoseq-pipeline in pipelines/.
 ISOSEQ_DIR    = os.path.dirname(workflow.basedir)
 PIPELINES_DIR = os.path.dirname(ISOSEQ_DIR)
-SCRIPTS    = os.path.join(ISOSEQ_DIR, "scripts")
-FASTA_SH   = os.path.join(PIPELINES_DIR, "salmon-pipeline/scripts/make_transcriptome_fasta.sh")
-# Tools: the isoseq environment's Python, tama_merge (which needs Python 2) and gffcompare.
-PYTHON     = "/sc/arion/projects/als-omics/conda/envs/isoseq-pipeline/bin/python"
+SCRIPTS       = os.path.join(ISOSEQ_DIR, "scripts")
+FASTA_SH      = os.path.join(PIPELINES_DIR, "salmon-pipeline/scripts/make_transcriptome_fasta.sh")
+SQANTI_RULES  = os.path.join(ISOSEQ_DIR, "misc", "sqanti_rules.json")
+# Tools: tama_merge (which needs Python 2) and gffcompare 0.12.10.
 TAMA       = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"
 PYTHON2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"
 GFFCOMPARE = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare"
 
 # Every name tied to the build comes from run_code, so a new build cannot read or overwrite an old one.
-RUN     = config["run_code"]
-OUT     = config["reference_root"] + RUN + "/"
-NAME    = "isoforms_" + RUN
-cohorts = {name: path.format(run_code=RUN) for name, path in config["cohorts"].items()}
-# Build one --cohort name=gtf argument per cohort.
-cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohorts.items())
-# Each cohort pipeline writes its provenance and tracking tables next to its final GTF, under the same prefix.
-# For example, <prefix>.isoforms.gtf.gz sits next to <prefix>_novel_provenance.tsv and
-# <prefix>_tracking_numbers.tsv.
-cohort_prov = {k: v.replace(".isoforms.gtf.gz", "_novel_provenance.tsv") for k, v in cohorts.items()}
-cohort_tracking = {k: v.replace(".isoforms.gtf.gz", "_tracking_numbers.tsv") for k, v in cohorts.items()}
+RUN  = config["run_code"]
+OUT  = config["reference_root"] + RUN + "/"
+NAME = "isoforms_" + RUN
+
+# Read each cohort's own config, so that this stage takes its genome, its assembler output paths and its short-read
+# junction files from the same file the cohort run used.
+COHORT_CFG = {}
+for cohort_name, cohort_config in config["cohorts"].items():
+    with open(cohort_config) as fh:
+        COHORT_CFG[cohort_name] = yaml.safe_load(fh)
+COHORT_NAMES = sorted(COHORT_CFG)
+
+# Stop when a cohort name carries an underscore, because TAMA and the membership columns use it as a separator.
+# Stop also when a cohort config names another run_code, so that one build never mixes the outputs of two.
+for cohort_name, cfg in COHORT_CFG.items():
+    if "_" in cohort_name:
+        raise ValueError("cohort name %s carries an underscore" % cohort_name)
+    if cfg["run_code"] != RUN:
+        raise ValueError("cohort %s has run_code %s, this build is %s" % (cohort_name, cfg["run_code"], RUN))
+
+# The cohorts must share the genome, the annotation and the SQANTI evidence files, because one SQANTI run and one
+# reference cover them all. The positive-control coordinates and the UCSC genome name are optional in a cohort
+# config. When absent they take the hg38 values below, and they must also agree between cohorts.
+# The hg38 UNC13A event needs both junctions on either side of its cryptic exon.
+HG38_SANITY_EVENTS = ("UNC13A:chr19:17641557-17642413+17642542-17642844,"
+                      "STMN2:chr8:79611215-79616821,"
+                      "KCNQ2:chr20:63439709-63444658,"
+                      "HYOU1:chr11:119052173-119052636,"
+                      "NUP93:chr16:56839070-56841704,"
+                      "XPNPEP1:chr10:109884149-109888048")
+SHARED = {}
+for key, default in (("ref_genome", None), ("ref_gtf", None), ("sqanti_cage_peak", None),
+                     ("sqanti_polya_motifs", None), ("sanity_event_list", HG38_SANITY_EVENTS),
+                     ("ucsc_genome", "hg38")):
+    values = {cfg.get(key, default) for cfg in COHORT_CFG.values()}
+    if len(values) != 1 or None in values:
+        raise ValueError("the cohort configs disagree on %s: %s" % (key, values))
+    SHARED[key] = values.pop()
+GENOME        = SHARED["ref_genome"] + ".fa"
+REF_GTF       = OUT + "reference.gtf"
+SANITY_GENES  = "UNC13A,STMN2,KCNQ2,HYOU1,NUP93,XPNPEP1"
+SANITY_EVENTS = SHARED["sanity_event_list"]
 
 
+# List the assembler GTFs as (tool, cohort, group, path), with the paths the cohort pipeline writes.
+def cohort_tool_gtfs(cohort_name, cfg):
+    out = cfg["out_folder"] + cfg["run_code"] + "/"
+    code = cfg["data_code"]
+    rows = []
+    for g in cfg["groups"]:
+        rows.append(("bambu", cohort_name, g, out + "bambu/%s/%s_%s_extended_annotations.gtf" % (g, code, g)))
+        rows.append(("isoquant", cohort_name, g,
+                     out + "isoquant/%s/%s_%s/%s_%s.extended_annotation.gtf" % (g, code, g, code, g)))
+        rows.append(("stringtie", cohort_name, g, out + "stringtie3/%s/%s_%s.stringtie.gtf" % (g, code, g)))
+    return rows
+
+
+TOOL_GTFS = [row for c in COHORT_NAMES for row in cohort_tool_gtfs(c, COHORT_CFG[c])]
+
+
+# List the STAR junction files that SQANTI uses for short-read support, from both cohorts. A library in a cohort's
+# exclude_samples stays out, as it stays out of that cohort's minimap2 hints and StringTie short-read pool (tdpkd
+# TDP-5 and CTRL-4). The sample id is the part of the file name before the first dot, as in <sample>.SJ.out.tab.
+def cohort_sj_files(cfg):
+    excluded = {x for x in cfg.get("exclude_samples", "").split(",") if x}
+    return [f for f in sorted(glob.glob(os.path.join(cfg["junction_folder"], "*.SJ.out.tab")))
+            if os.path.basename(f).split(".")[0] not in excluded]
+
+
+SQANTI_SJ = [f for c in COHORT_NAMES for f in cohort_sj_files(COHORT_CFG[c])]
+# SQANTI names each library by its file name, so two cohorts with the same library name would be counted as one
+# library. Stop if that happens.
+sj_names = [os.path.basename(f) for f in SQANTI_SJ]
+if len(set(sj_names)) != len(sj_names):
+    raise ValueError("two cohorts share a junction file name: %s" % sorted(sj_names))
+
+# The final outputs. The tracking table is updated only when the config names it.
 rule all:
     input:
         OUT + NAME + ".gtf.gz",
         OUT + NAME + ".fa.gz",
         OUT + "cross_cohort_novel_provenance.tsv",
+        OUT + NAME + "_sanity_genes.tsv",
+        OUT + "consensus/" + NAME + "_tool_overlap.tsv",
         OUT + "tracking_numbers_final_numbers.tsv",
-        OUT + "cross_cohort_tool_membership_by_cohort.tsv",
-        OUT + "tracking_numbers.done"
+        expand(OUT + "tracking_numbers_{cohort}.tsv", cohort=COHORT_NAMES),
+        OUT + "sqanti/" + NAME + "_ucsc_hub",
+        [OUT + "tracking_numbers.done"] if config.get("tracking_numbers") else []
 
 
-# Merge the SQANTI-passed novel models of all cohorts with tama_merge (Kuo et al. 2020).
-# The merge uses the same tolerances as within each cohort. Junctions may differ by up to wobble bp and
-# 3' ends by up to tes_tol bp.
-# GENCODE is then appended.
-rule cross_cohort_union:
-    input:
-        ref     = config["reference"],
-        cohorts = list(cohorts.values()),
-        # The script and the module it imports are inputs, so editing either one rebuilds the union.
-        script  = SCRIPTS + "/cross_cohort_novel_union.py",
-        helper  = SCRIPTS + "/consensus_tama.py"
-    output:
-        gtf     = temp(OUT + NAME + ".union.gtf"),
-        prov    = temp(OUT + "cross_cohort_union_provenance.tsv"),
-        summary = OUT + "tracking_numbers_final_numbers.tsv"
-    params:
-        workdir = OUT + "tama_tmp"
-    shell:
-        """
-        {PYTHON} {input.script} \
-        --reference {input.ref} \
-        {cohort_args} \
-        --novel-source ONT \
-        --wobble {config[wobble]} \
-        --tes-tol {config[tes_tol]} \
-        --tama-merge {TAMA} \
-        --python2 {PYTHON2} \
-        --workdir {params.workdir} \
-        --prefix XNOVEL \
-        --provenance-out {output.prov} \
-        --summary-out {output.summary} \
-        -o {output.gtf}
-        rm -rf {params.workdir}
-        """
-
-
-# Decompress the reference, because gffcompare needs a plain-text GTF.
+# Decompress the reference, because gffcompare, SQANTI and the scripts read a plain-text GTF.
 rule decompress_reference:
     input:
-        config["reference"]
+        SHARED["ref_gtf"]
     output:
-        temp(OUT + "reference.gtf")
+        temp(REF_GTF)
     shell:
         "gunzip -c {input} > {output}"
 
 
-# Assign genes to the union's novel models and write the final GTF.
-# The novel models get XNOVEL ids, and models outside any known gene get new loci.
-rule cross_cohort_genes:
-    input:
-        gtf     = OUT + NAME + ".union.gtf",
-        prov    = OUT + "cross_cohort_union_provenance.tsv",
-        ref     = OUT + "reference.gtf",
-        cohorts = list(cohorts.values()),
-        # The script is listed as an input, so editing it re-runs this step.
-        script  = SCRIPTS + "/cross_cohort_novel_genes.py"
-    output:
-        gtf  = OUT + NAME + ".gtf.gz",
-        prov = OUT + "cross_cohort_novel_provenance.tsv"
-    params:
-        plain   = OUT + NAME + ".gtf",
-        workdir = OUT + "loci_tmp"
-    shell:
-        """
-        {PYTHON} {input.script} \
-        --gtf {input.gtf} \
-        --provenance {input.prov} \
-        {cohort_args} \
-        --reference {input.ref} \
-        --gffcompare {GFFCOMPARE} \
-        --workdir {params.workdir} \
-        --novel-source ONT \
-        --prefix XNOVEL \
-        --provenance-out {output.prov} \
-        -o {params.plain}
-        gzip -nf {params.plain}
-        rm -rf {params.workdir}
-        """
-
-
-# Write the transcript sequences of the final GTF. This FASTA is the input for the salmon index.
-rule cross_cohort_fasta:
-    input:
-        gtf = OUT + NAME + ".gtf.gz",
-        # The salmon-pipeline gffread wrapper is an input, so editing it rebuilds the FASTA.
-        script = FASTA_SH
-    output:
-        fa = OUT + NAME + ".fa.gz"
-    shell:
-        "bash {input.script} {input.gtf} {config[genome_fasta]} {output.fa}"
-
-
-# Record which cohorts and tools support each cross-cohort novel model.
-# This table is rebuilt with every build, because XNOVEL ids are renumbered between builds.
-rule cross_cohort_tool_membership:
-    input:
-        cross       = OUT + "cross_cohort_novel_provenance.tsv",
-        cohort_prov = list(cohort_prov.values()),
-        # The script is listed as an input, so editing it re-runs this step.
-        script      = SCRIPTS + "/cross_cohort_tool_membership_by_cohort.py"
-    output:
-        OUT + "cross_cohort_tool_membership_by_cohort.tsv"
-    params:
-        cohort_args = " ".join("--cohort %s=%s" % kv for kv in cohort_prov.items())
-    shell:
-        """
-        {PYTHON} {input.script} \
-        --cross-provenance {input.cross} {params.cohort_args} \
-        -o {output}
-        """
-
-
-# Write this build's funnel numbers into the project tracking table.
-rule upsert_tracking:
-    input:
-        union  = OUT + "tracking_numbers_final_numbers.tsv",
-        cohort = list(cohort_tracking.values()),
-        # The script is listed as an input, so editing it re-runs this step.
-        script = SCRIPTS + "/upsert_tracking_numbers.py"
-    output:
-        done = touch(OUT + "tracking_numbers.done")
-    params:
-        cohort = " ".join("%s=%s" % kv for kv in cohort_tracking.items())
-    shell:
-        """
-        {PYTHON} {input.script} {config[tracking_numbers]} {config[run_code]} {input.union} {params.cohort}
-        """
+# The rules of the pooled stage. rule all above stays the first rule, so it is the default target.
+include: os.path.join(ISOSEQ_DIR, "workflows", "consensus_pipeline.smk")
+include: os.path.join(ISOSEQ_DIR, "workflows", "sqanti_pipeline.smk")

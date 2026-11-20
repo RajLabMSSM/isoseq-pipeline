@@ -1,7 +1,10 @@
 #!/usr/bin/env python
-"""Cross-tool consensus with tama_merge (Kuo et al. 2020): the spliced, stranded novel models of the
-union (gffcompare class not in --exclude-codes) go in as one no_cap source per tool and group; every
-model from any one tool is kept. The merged models are re-classified against the reference."""
+"""Merge the novel models of all tools and cohorts with tama_merge (Kuo et al. 2020).
+
+The spliced, stranded novel models of the union (gffcompare class not in --exclude-codes) go in as one no_cap
+source per tool, cohort and group, and every model built by any one source is kept. The merged models are then
+classified against the reference with gffcompare (Pertea and Pertea 2020). Each merged model records which tools,
+cohorts and groups built it."""
 import argparse
 import glob
 import os
@@ -22,7 +25,8 @@ def attr(field, key):
 
 
 def load_union(path):
-    # union gtf -> {union id: chrom, strand, sorted exons, source tool and group}
+    # Read the union GTF into {union id: chrom, strand, sorted exons, source tool, cohort and group}.
+    # A group name such as TDP occurs in more than one cohort, so the group is stored as <cohort>_<group>.
     tx = {}
     with open(path) as fh:
         for line in fh:
@@ -34,8 +38,9 @@ def load_union(path):
                 continue
             d = tx.get(uid)
             if d is None:
-                d = {"chrom": c[0], "strand": c[6], "exons": [],
-                     "tool": attr(c[8], "src_tool"), "group": attr(c[8], "src_group")}
+                cohort = attr(c[8], "src_cohort")
+                d = {"chrom": c[0], "strand": c[6], "exons": [], "tool": attr(c[8], "src_tool"),
+                     "cohort": cohort, "group": "%s_%s" % (cohort, attr(c[8], "src_group"))}
                 tx[uid] = d
             if c[2] == "exon":
                 d["exons"].append((int(c[3]), int(c[4])))
@@ -162,20 +167,24 @@ def main():
     unstranded = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] not in ("+", "-")]
     novel = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] in ("+", "-")]
 
-    # per-tool counts at each step, for the stats table
-    raw_by_tool = Counter(tx[u]["tool"] for u in tx)
-    candidates_by_tool = Counter(tx[u]["tool"] for u in candidates)
-    mono_by_tool = Counter(tx[u]["tool"] for u in mono)
-    unstranded_by_tool = Counter(tx[u]["tool"] for u in unstranded)
-    with open(args.stats_out, "w") as sf:
-        sf.write("tool\traw_all\tnovel_candidates\tmonoexon_dropped\tunstranded_dropped\n")
-        for t in TOOLS:
-            sf.write("%s\t%d\t%d\t%d\t%d\n" % (t, raw_by_tool[t], candidates_by_tool[t],
-                                                  mono_by_tool[t], unstranded_by_tool[t]))
+    # Count the models of each cohort and tool at each step, for the stats table. raw_all counts the union, which
+    # already lacks the transcripts that carry a GENCODE id.
+    cohort_names = sorted({d["cohort"] for d in tx.values()})
 
-    # one bed per tool + group source. tama joins source name and transcript with "_", so a source name may not
-    # contain one: keep only letters and digits. two different groups could then end up with the same name
-    # (cohort_1CTRL and cohort1_CTRL both become cohort1CTRL), so stop if that happens instead of merging them
+    def count(uids):
+        return Counter((tx[u]["cohort"], tx[u]["tool"]) for u in uids)
+
+    raw, cand, mono_n, unstr_n = count(tx), count(candidates), count(mono), count(unstranded)
+    with open(args.stats_out, "w") as sf:
+        sf.write("cohort\ttool\traw_all\tnovel_candidates\tmonoexon_dropped\tunstranded_dropped\n")
+        for c in cohort_names:
+            for t in TOOLS:
+                k = (c, t)
+                sf.write("%s\t%s\t%d\t%d\t%d\t%d\n" % (c, t, raw[k], cand[k], mono_n[k], unstr_n[k]))
+
+    # Write one BED file per tool, cohort and group source. TAMA joins the source name and the transcript id with
+    # "_", so a source name keeps only letters and digits. Two sources could then end up with the same name, and
+    # the run stops if that happens instead of merging them.
     os.makedirs(args.workdir, exist_ok=True)
     source_of = {}
     for d in tx.values():
@@ -218,20 +227,26 @@ def main():
         chrom, _strand, exons = models[mid]
         return (chrom, exons[0][0], exons[-1][1])
 
-    # every group (condition) in this run, for the per-group support columns
+    # Every group (condition) of every cohort in this run, for the per-group support columns.
     group_names = sorted({d["group"] for d in tx.values()})
 
-    # write the consensus gtf with class code and reference tags, and note which tools and which groups built
-    # each model (from the union models tama merged into it)
+    # Write the consensus GTF with the class code, the reference tag and the cohorts that built each model. The
+    # tools, cohorts and groups of a model come from the union models that TAMA merged into it. The cohorts are
+    # written in alphabetical order and joined by a comma, as in the published v9 GTF (sun, tdpkd or sun,tdpkd).
     rows = []
     order = sorted(models, key=model_position)
     with open(args.output, "w") as out:
         for mid in order:
             cc, ref_id = merged_cc.get(mid, UNMATCHED)
-            tools = sorted({tx[u]["tool"] for u in members.get(mid, [])})
-            groups = sorted({tx[u]["group"] for u in members.get(mid, [])})
-            out.write(gtf_lines(mid, *models[mid], extra=' class_code "%s"; cmp_ref "%s";' % (cc, ref_id)))
-            rows.append({"transcript_id": mid, "class_code": cc, "tools": tools, "groups": groups})
+            mem = members.get(mid, [])
+            tools = sorted({tx[u]["tool"] for u in mem})
+            cohorts = sorted({tx[u]["cohort"] for u in mem})
+            groups = sorted({tx[u]["group"] for u in mem})
+            cohort_tools = {(tx[u]["cohort"], tx[u]["tool"]) for u in mem}
+            out.write(gtf_lines(mid, *models[mid], extra=' class_code "%s"; cmp_ref "%s"; cohorts "%s";'
+                                % (cc, ref_id, ",".join(cohorts))))
+            rows.append({"transcript_id": mid, "class_code": cc, "tools": tools, "cohorts": cohorts,
+                         "groups": groups, "cohort_tools": cohort_tools})
 
     # count merged models per supporting-tool combination, all three tools first
     counts = Counter(tuple(r["tools"]) for r in rows)
@@ -243,18 +258,23 @@ def main():
             for s in combinations(TOOLS, k):
                 out.write("%s\t%d\n" % ("+".join(s), counts[s]))
         out.write("total_novel\t%d\n" % len(rows))
-    # membership table: one row per merged model, a 0/1 column per tool, then the number of groups and a 0/1
-    # column per group (group_<name>), so a model built in one condition only can be told apart. the group
-    # columns come last: readers pick columns by name, and build_reference_with_novel.py carries every column
-    # after is_novel into the provenance table
+    # Write the membership table with one row per merged model. It holds a 0/1 column per tool, the number and
+    # names of the cohorts, a 0/1 column per cohort and tool (<cohort>_<tool>), and the number of groups with a
+    # 0/1 column per group (group_<cohort>_<group>). A model built in one cohort or one condition only can so be
+    # told apart. Readers pick columns by name, and build_reference_with_novel.py carries every column after
+    # is_novel into the provenance table.
+    cohort_tool_cols = [(c, t) for c in cohort_names for t in TOOLS]
     with open(args.membership_out, "w") as out:
-        out.write("transcript_id\tclass_code\tis_novel\tn_tools\t%s\tn_groups\t%s\n"
-                  % ("\t".join(TOOLS), "\t".join("group_" + g for g in group_names)))
+        out.write("transcript_id\tclass_code\tis_novel\tn_tools\t%s\tn_cohorts\tcohorts\t%s\tn_groups\t%s\n"
+                  % ("\t".join(TOOLS), "\t".join("%s_%s" % ct for ct in cohort_tool_cols),
+                     "\t".join("group_" + g for g in group_names)))
         for r in rows:
             tool_flags = "\t".join("1" if t in r["tools"] else "0" for t in TOOLS)
+            cohort_tool_flags = "\t".join("1" if ct in r["cohort_tools"] else "0" for ct in cohort_tool_cols)
             group_flags = "\t".join("1" if g in r["groups"] else "0" for g in group_names)
-            out.write("%s\t%s\t1\t%d\t%s\t%d\t%s\n" % (r["transcript_id"], r["class_code"], len(r["tools"]),
-                                                        tool_flags, len(r["groups"]), group_flags))
+            out.write("%s\t%s\t1\t%d\t%s\t%d\t%s\t%s\t%d\t%s\n"
+                      % (r["transcript_id"], r["class_code"], len(r["tools"]), tool_flags, len(r["cohorts"]),
+                         ",".join(r["cohorts"]), cohort_tool_flags, len(r["groups"]), group_flags))
 
     print("* tama merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
           "-> %d merged models (junctions +-%dbp, 3' +-%dbp, no_cap) -> %s"

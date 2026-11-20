@@ -1,18 +1,20 @@
-reference: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode_hg38_v50/gencode.v50.primary_assembly.annotation.gtf.gz"
-genome_fasta: "/sc/arion/projects/ad-omics/data/references/hg38_reference/GENCODE/gencode.v38.primary_assembly/GRCh38.primary_assembly.genome.fa"
-
-# This is the only key to change for a new build.
-# The output folder, the output name and the cohort paths below all follow it.
+# This is the only key to change for a new build. The output folder and names follow it, and every cohort config
+# below must carry the same run_code, or the run stops.
 run_code: "v10"
 reference_root: "/sc/arion/projects/als-omics/brooke-phd-thesis/references/novel_isoform_references/"
 
-# These must match consensus_junction_wobble and consensus_tes_tol in the cohort configs.
+# The cohort configs whose assembler outputs are pooled. The genome, the annotation, the SQANTI evidence files, the
+# assembler output paths and the short-read junction files are read from them.
+# Cohort names must not contain an underscore, because TAMA uses the underscore to separate source names. They are
+# also the values of the cohorts attribute of the final GTF.
+cohorts:
+  tdpkd: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/tdp_nanopore_config.yaml"
+  sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/sun_tdp_overexpression_nanopore_config.yaml"
+
+# tama_merge tolerances (Kuo et al. 2020): junctions exact, because SQANTI needs exact junctions and a wobble only
+# hides models, and 3' ends within 100 bp.
 wobble: 0
 tes_tol: 100
 
-# Cohort names must not contain an underscore, because TAMA uses the underscore to separate source names.
-cohorts:
-  tdpkd: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/results/{run_code}/consensus/tdpkd_nanopore.isoforms.gtf.gz"
-  sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/results/{run_code}/consensus/sun_tdp_overexpression_nanopore.isoforms.gtf.gz"
-
+# The project table that collects the funnel numbers of every pipeline.
 tracking_numbers: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/cross_cohort/tracking_numbers.tsv"

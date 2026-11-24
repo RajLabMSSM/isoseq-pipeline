@@ -51,7 +51,7 @@ Steps 4 onwards run once, in `cross_cohort/Snakefile`, on both cohorts together.
 4. The 12 assembler GTFs (3 tools x 2 groups x 2 cohorts) combined; transcripts carrying a GENCODE id
    removed (Bambu and IsoQuant reference passthrough by `transcript_id`, StringTie `-G` matches by
    `reference_id`); gffcompare 0.12.10 against GENCODE v50, models of class `=` or `c`, single-exon and
-   unstranded models dropped; `tama_merge -m 0 -z 100 -d merge_dup`, one `no_cap` source per tool,
+   unstranded models dropped; `tama_merge -m 6 -z 100 -d merge_dup`, one `no_cap` source per tool,
    cohort and group (no tool vote); the merged models classified against GENCODE v50 with gffcompare again,
    `=` and `c` dropped again
 5. SQANTI3 6.0.1 QC with the `SJ.out.tab` files of both cohorts (10 tdpkd + 8 sun libraries), CAGE peaks

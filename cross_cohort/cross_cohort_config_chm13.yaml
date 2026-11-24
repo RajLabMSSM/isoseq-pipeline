@@ -9,5 +9,5 @@ cohorts:
   sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/sun_tdp_overexpression_nanopore_config_chm13.yaml"
 
 # tama_merge tolerances, the same as the hg38 build.
-wobble: 0
+wobble: 6
 tes_tol: 100

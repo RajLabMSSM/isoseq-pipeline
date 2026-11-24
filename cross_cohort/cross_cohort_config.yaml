@@ -11,9 +11,11 @@ cohorts:
   tdpkd: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/tdp_nanopore_config.yaml"
   sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/sun_tdp_overexpression_nanopore_config.yaml"
 
-# tama_merge tolerances (Kuo et al. 2020): junctions exact, because SQANTI needs exact junctions and a wobble only
-# hides models, and 3' ends within 100 bp.
-wobble: 0
+# tama_merge tolerances (Kuo et al. 2020). Splice junctions of models from different sources merge when they lie
+# within 6 bp of each other. This matches the junction tolerance IsoQuant uses for nanopore reads, which is delta 6
+# under its default matching strategy (IsoQuant 3.13.0; Prjibelski et al. 2023).
+# 3' ends merge when they lie within 100 bp of each other.
+wobble: 6
 tes_tol: 100
 
 # The project table that collects the funnel numbers of every pipeline.

@@ -5,13 +5,13 @@ every NanoStat metric of every stage kept in its own table."""
 
 # In simpler terms, the script answers four questions:
 # 1. How long are the aligned Nanopore reads?
-# 2. How many reads did each sample have before pychopper, after pychopper and after minimap2?
-# 3. How much was lost at pychopper, and how much at the alignment?
-# 4. What fraction of raw reads did Pychopper find primers on at both ends?
+# 2. How many reads did each sample have before and after processing?
+# 3. What fraction of the original reads are represented in the aligned data?
+# 4. What fraction of reads were classified as full-length by Pychopper?
 
 # outputs:
 # read_length_hist.tsv.gz =	Histogram data showing the distribution of primary mapped read lengths for every sample
-# longread_qc_summary.tsv =	One row per sample containing the read counts, median lengths and yields that figures draw from
+# longread_qc_summary.tsv =	One row per sample containing read counts, median lengths, aligned fraction, and Pychopper full-length share
 # nanostat_all_metrics.tsv = One row per sample per stage holding every NanoStat metric, kept to look back at, not plotted
 # *_mqc.tsv = The panels of the MultiQC page (yields, read classification, before/after pychopper, before/after minimap2)
 
@@ -129,13 +129,12 @@ def write_multiqc_panels(out, prefix):
 
 
 def main():
-    # read the options
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--metadata", required=True)                        # sample metadata TSV
     ap.add_argument("--read-lengths", nargs="+", required=True)         # individual primary mapped-read lengths
-    ap.add_argument("--nanostat-raw", nargs="+", required=True)         # nanostat reports of the raw reads
+    ap.add_argument("--nanostat-raw", nargs="+", required=True)         # raw nanostat reports
     ap.add_argument("--nanostat-pychopper", nargs="+", required=True)   # nanostat reports of the reads pychopper kept
-    ap.add_argument("--nanostat-aligned", nargs="+", required=True)     # nanostat reports of the primary mapped reads
+    ap.add_argument("--nanostat-aligned", nargs="+", required=True)     # aligned nanostat reports
     ap.add_argument("--pychopper", nargs="+", required=True)            # pychopper classification stats
     ap.add_argument("--hist-out", required=True)                        # output is a histogram TSV
     ap.add_argument("--summary-out", required=True)                     # output is a QC summary TSV

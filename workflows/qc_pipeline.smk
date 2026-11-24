@@ -42,7 +42,7 @@ rule build_junc_bed:
 
 # pychopper finds the cDNA primers of the kit (-k) at both read ends (-m edlib alignment), orients
 # each read to the transcript strand and trims the primers. kept = reads with both primers (primary)
-# plus reads rescued from fused molecules (-w); reads with no valid primer arrangement are not written to any file.
+# plus reads rescued from fused molecules (-w); unclassified reads where there is no valid primer arrangement are not written to any file.
 rule pychopper:
     input:
         fastq = raw_fastq
@@ -148,8 +148,7 @@ rule nanostat_raw:
         "NanoStat --fastq {input.reads} --tsv -t {threads} > {output}"
 
 
-# the same statistics over the reads pychopper kept (the fastq that goes to minimap2), the middle stage of the
-# read counts: raw -> after pychopper -> after minimap2
+# the same statistics over the reads pychopper kept (the fastq that goes to minimap2)
 rule nanostat_pychopper:
     input:
         reads = out_folder + "{sample}/pychopper/{sample}.full_length.fastq"
@@ -172,11 +171,8 @@ rule nanostat_aligned:
         "NanoStat --bam {input.bam} --no_supplementary --tsv -t {threads} > {output}"
 
 
-# rRNA interval list for picard: the awk keeps the gene lines whose gene_type is rRNA,
-# rRNA_pseudogene or Mt_rRNA and prints them as bed (0-based start, gene_id as the name, strand);
-# picard turns the bed into an interval list against the genome's sequence dictionary.
-# the gtf is read straight from the gzipped GENCODE file: the decompressed copy is temporary, and depending on it
-# would redo this rule and all the qc after it whenever the assemblers re-create that copy
+# rRNA interval list for picard from the rRNA, rRNA_pseudogene and Mt_rRNA genes of GENCODE
+# reads the gzipped gtf, because the decompressed copy is temporary and depending on it would redo all qc after it
 rule rrna_intervals:
     input:
         gtf    = config['ref_gtf'],
@@ -197,8 +193,7 @@ rule rrna_intervals:
         """
 
 
-# picard rna-seq metrics (coding / utr / intronic / rRNA shares). pychopper has oriented every read
-# to the transcript strand, so the read itself is on the transcription strand
+# picard rna-seq metrics. pychopper oriented every read to the transcript strand, hence FIRST_READ_TRANSCRIPTION_STRAND
 rule picard:
     input:
         bam    = qc_bam,
@@ -218,8 +213,8 @@ rule picard:
         """
 
 
-# length of every primary mapped read, for the read-length histogram (-F 2308 drops unmapped, secondary and
-# supplementary records, so each read is counted once at its full trimmed length). column 10 of a sam record is the read sequence
+# length of every primary mapped read (-F 2308 drops unmapped, secondary and supplementary records, so each read
+# counts once) - indiviual sequence lengths for mapped alignments. column 10 of a sam record is the read sequence
 rule read_lengths:
     input:
         qc_bam

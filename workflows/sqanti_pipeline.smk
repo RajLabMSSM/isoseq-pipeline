@@ -1,5 +1,5 @@
 # SQANTI3 on the pooled novel models (Pardo-Palacios et al. 2024). This file is included by cross_cohort/Snakefile,
-# which defines OUT, NAME, REF_GTF, GENOME, SQANTI_SJ, SQANTI_RULES and the shared genome settings.
+# which defines OUT, NAME, REF_GTF, GENOME, SQANTI_SJ and the shared genome settings.
 sq = OUT + "sqanti/" + NAME
 
 
@@ -65,21 +65,12 @@ rule sqanti_qc:
         """
 
 
-# Filter the SQANTI calls with the rules in sqanti_rules.json.
-# Full splice matches (FSM) are checked for intra-priming only.
-# Every other model must also have only canonical junctions, each supported by short reads in at least
-# 2 libraries of either cohort (min_sample_cov >= 2).
-# The RTS_stage rule is left out, because it removes the UNC13A cryptic exon.
-# The -e option (--filter_mono_exonic) is a safeguard. The consensus step already drops single-exon models,
-# so it removes nothing today, but it would catch them if that step changed.
-# The FSM rule is the same kind of safeguard. No FSM model reaches this step, because models with class
-# code = are left out above.
-# The next steps only need the pass list, so no filtered GTF or FASTA is requested.
-# The filtering reasons file is read by rule sanity_genes.
+# filter with SQANTI3's own default rules (Pardo-Palacios et al. 2024), as no -j file is given
+# -e is only a safeguard, because single-exon models never reach SQANTI
+# the filtering reasons file is read by rule sanity_genes
 rule sqanti_filter:
     input:
-        classification = sq + "_classification.txt",
-        rules = SQANTI_RULES
+        classification = sq + "_classification.txt"
     output:
         classification = sq + "_RulesFilter_classification.txt",
         pass_ids       = sq + "_pass_isoforms.txt",
@@ -91,7 +82,6 @@ rule sqanti_filter:
         conda activate sqanti3_v6
         sqanti3_filter.py rules \\
         --sqanti_class {input.classification} \\
-        -j {input.rules} \\
         -e \\
         -d {params.outdir} \\
         -o {NAME}

@@ -56,8 +56,8 @@ Steps 4 onwards run once, in `cross_cohort/Snakefile`, on both cohorts together.
    cohort and group (no tool vote); the merged models classified against GENCODE v50 with gffcompare again,
    `=` and `c` dropped again
 5. SQANTI3 6.0.1 QC with the `SJ.out.tab` files of both cohorts (10 tdpkd + 8 sun libraries), CAGE peaks
-   and polyA motifs; `sqanti3_filter.py rules -e` with `misc/sqanti_rules.json`. `min_sample_cov >= 2`
-   therefore counts libraries of either cohort
+   and polyA motifs; `sqanti3_filter.py rules -e` with SQANTI3's default rules (intra-priming, RT switching, and canonical
+   junctions or `min_cov >= 3` short reads summed over the libraries of both cohorts)
 6. SQANTI-browser 1.1.2 (Paniagua et al. 2026, bioRxiv, doi:10.64898/2026.05.25.727625) turns
    `_corrected.gtf` and `_RulesFilter_classification.txt` into a UCSC track hub (hg38, chromosome sizes
    from the genome `.fai`, the SQANTI CAGE peaks as a track, `--hub-name isoforms_<run_code>`); `hubCheck`

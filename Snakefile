@@ -19,6 +19,8 @@ genome          = config['ref_genome'] + ".fa"
 ref_gtf         = out_folder + data_code + ".reference_annotation.gtf"
 junction_folder = config['junction_folder']
 excluded_samples = set(x for x in config.get('exclude_samples', '').split(',') if x)
+# long-read libraries kept for alignment and QC but left out of the assembler pools
+excluded_from_discovery = set(x for x in config.get('exclude_from_discovery', '').split(',') if x)
 
 # sample sheet: one row per sample with its long-read fastq and short-read bam
 metaDF        = pd.read_csv(config['metadata'], sep='\t')
@@ -84,7 +86,8 @@ rule decompress_ref_gtf:
 
 rule pool_group_bams:
     input:
-        bams = lambda wc: [out_folder + "%s/alignment/%s.aligned.cram" % (s, s) for s in sample_groups[wc.group]]
+        bams = lambda wc: [out_folder + "%s/alignment/%s.aligned.cram" % (s, s) for s in sample_groups[wc.group]
+                           if s not in excluded_from_discovery]
     output:
         bam = temp(out_folder + "pooled/" + data_code + "_{group}.pooled.bam"),
         bai = temp(out_folder + "pooled/" + data_code + "_{group}.pooled.bam.bai")

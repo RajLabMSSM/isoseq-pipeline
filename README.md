@@ -40,7 +40,8 @@ sample-name prefixes (`TDP_1` -> `TDP`).
    tdpkd drops two short-read libraries via `exclude_samples`, here, in the StringTie short-read pool
    and in the SQANTI junction coverage: TDP-5 (aberrant differentiation) and CTRL-4 (low-depth outlier).
    CTRL4 long reads stay in, so tdpkd has 11 long-read and 10 short-read libraries. TDP2 long reads
-   combine both of its sequencing runs
+   combine both of its sequencing runs. sun leaves GFP_1 long reads out of the group pools via
+   `exclude_from_discovery` (aligned and QC'd, short reads kept), so sun pools 7 long-read libraries
 3. Long-read alignments are merged per group with `samtools merge`, the short-read STAR alignments
    likewise. Per group, on the pooled long-read BAM:
    - StringTie 3.0.3 `--mix -G` (pooled short-read BAM first; no `-t`)

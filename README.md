@@ -52,7 +52,8 @@ Steps 4 onwards run once, in `cross_cohort/Snakefile`, on both cohorts together.
 4. The 12 assembler GTFs (3 tools x 2 groups x 2 cohorts) combined; transcripts carrying a GENCODE id
    removed (Bambu and IsoQuant reference passthrough by `transcript_id`, StringTie `-G` matches by
    `reference_id`); gffcompare 0.12.10 against GENCODE v50, models of class `=` or `c`, single-exon and
-   unstranded models dropped; `tama_merge -m 6 -z 100 -d merge_dup`, one `no_cap` source per tool,
+   unstranded models dropped; isomatch 0.8.0 `merge --terminal-refine tes --terminal-refine-nc tes`, otherwise
+   at its defaults (Zheng et al. 2026, bioRxiv, doi:10.64898/2026.10.09.758114), one input GTF per tool,
    cohort and group (no tool vote); the merged models classified against GENCODE v50 with gffcompare again,
    `=` and `c` dropped again
 5. SQANTI3 6.0.1 QC with the `SJ.out.tab` files of both cohorts (10 tdpkd + 8 sun libraries), CAGE peaks
@@ -70,9 +71,10 @@ Steps 4 onwards run once, in `cross_cohort/Snakefile`, on both cohorts together.
 QC: samtools, Picard and pychopper into MultiQC 1.25.1; NanoStat in `<data_code>_longread_qc_summary.tsv`; plus `<data_code>_read_length_hist.tsv.gz`.
 
 Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, `bambu_env`,
-`isoquant313`, `sqanti3_v6`, `tama_env` (Python 2), `multiqc`, `sqanti-browser` (the tool's
+`isoquant313`, `sqanti3_v6`, `multiqc`, `sqanti-browser` (the tool's
 `environment.yml`, then `pip install -e` of a clone of `github.com/ConesaLab/SQANTI-browser` at
-commit `8257746`).
+commit `8257746`). isomatch is not on bioconda; the pipeline runs the v0.8.0 Linux release binary
+(`isomatch-v0.8.0-linux-x86_64.tar.gz` from `github.com/zhengxinchang/isomatch/releases`).
 
 ## Outputs
 

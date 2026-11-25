@@ -19,8 +19,7 @@ ISOSEQ_DIR    = os.path.dirname(workflow.basedir)
 PIPELINES_DIR = os.path.dirname(ISOSEQ_DIR)
 SCRIPTS       = os.path.join(ISOSEQ_DIR, "scripts")
 FASTA_SH      = os.path.join(PIPELINES_DIR, "salmon-pipeline/scripts/make_transcriptome_fasta.sh")
-TAMA       = "/sc/arion/projects/ad-omics/data/software/tama/tama_merge.py"                         # Merge transcript models with similar structures
-PYTHON2    = "/sc/arion/projects/als-omics/conda/envs/tama_env/bin/python"                          # Python interpreter used to run TAMA
+ISOMATCH   = "/hpc/users/friedb09/tools/isomatch-0.8.0/isomatch"                                    # Merge transcript models with similar structures, v0.8.0 release binary
 GFFCOMPARE = "/sc/arion/projects/ad-omics/data/software/gffcompare-0.12.10.Linux_x86_64/gffcompare" #Compare assembled transcripts with reference annotations
 
 # every build name comes from run_code, so a new build never overwrites an old one
@@ -35,10 +34,8 @@ for cohort_name, cohort_config in config["cohorts"].items():
         COHORT_CFG[cohort_name] = yaml.safe_load(fh)
 COHORT_NAMES = sorted(COHORT_CFG)
 
-# stop on an underscore in a cohort name (TAMA's separator) or a cohort config with another run_code
+# stop on a cohort config with another run_code
 for cohort_name, cfg in COHORT_CFG.items():
-    if "_" in cohort_name:
-        raise ValueError("cohort name %s carries an underscore" % cohort_name)
     if cfg["run_code"] != RUN:
         raise ValueError("cohort %s has run_code %s, this build is %s" % (cohort_name, cfg["run_code"], RUN))
 

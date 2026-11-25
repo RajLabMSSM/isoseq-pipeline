@@ -5,18 +5,10 @@ reference_root: "/sc/arion/projects/als-omics/brooke-phd-thesis/references/novel
 
 # The cohort configs whose assembler outputs are pooled. The genome, the annotation, the SQANTI evidence files, the
 # assembler output paths and the short-read junction files are read from them.
-# Cohort names must not contain an underscore, because TAMA uses the underscore to separate source names. They are
-# also the values of the cohorts attribute of the final GTF.
+# Cohort names are the values of the cohorts attribute of the final GTF.
 cohorts:
   tdpkd: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/tdpkd/isoseq-pipeline/tdp_nanopore_config.yaml"
   sun:   "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/sun_tdp_overexpression/isoseq-pipeline/sun_tdp_overexpression_nanopore_config.yaml"
-
-# tama_merge tolerances (Kuo et al. 2020). Splice junctions of models from different sources merge when they lie
-# within 6 bp of each other. This matches the junction tolerance IsoQuant uses for nanopore reads, which is delta 6
-# under its default matching strategy (IsoQuant 3.13.0; Prjibelski et al. 2023).
-# 3' ends merge when they lie within 100 bp of each other.
-wobble: 6
-tes_tol: 100
 
 # The project table that collects the funnel numbers of every pipeline.
 tracking_numbers: "/sc/arion/projects/als-omics/brooke-phd-thesis/cohorts/cross_cohort/tracking_numbers.tsv"

@@ -4,14 +4,14 @@ cons = OUT + "consensus/" + NAME
 sq   = OUT + "sqanti/" + NAME
 
 
-# taking a union of all 12 assembler gtfs (3 tools x 2 groups x 2 cohorts) using tama_merge, which keeps any model from any one tool
+# taking a union of all 12 assembler gtfs (3 tools x 2 groups x 2 cohorts) using isomatch merge, which keeps any model from any one tool
 # gencode transcripts, = and c models, single-exon and unstranded models are removed before the merge
 rule consensus_isoforms:
     input:
         gtfs         = [path for _tool, _cohort, _group, path in TOOL_GTFS],
         ref          = REF_GTF,
         union_script = SCRIPTS + "/build_union.py",
-        tama_script  = SCRIPTS + "/consensus_tama.py"
+        merge_script = SCRIPTS + "/consensus_isomatch.py"
     output:
         merged     = cons + "_merged_consensus.gtf",
         overlap    = cons + "_tool_overlap.tsv",
@@ -23,20 +23,18 @@ rule consensus_isoforms:
         gffcmp_prefix = cons + "_gffcmp",
         union         = cons + "_union.gtf",
         union_args    = " ".join("--gtf %s %s %s %s" % entry for entry in TOOL_GTFS),
-        workdir       = OUT + "consensus/tama_tmp"
+        workdir       = OUT + "consensus/isomatch_tmp"
     shell:
         """
         python {input.union_script} {params.union_args} --reference {input.ref} -o {params.union}
         {GFFCOMPARE} -r {input.ref} -o {params.gffcmp_prefix} {params.union}
-        python {input.tama_script} \
+        python {input.merge_script} \
         --union {params.union} \
         --gffcmp-prefix {params.gffcmp_prefix} \
         --reference {input.ref} \
-        --junction-wobble {config[wobble]} \
-        --tes-tol {config[tes_tol]} \
+        --genome {GENOME} \
         --exclude-codes '=,c' \
-        --tama-merge {TAMA} \
-        --python2 {PYTHON2} \
+        --isomatch {ISOMATCH} \
         --gffcompare {GFFCOMPARE} \
         --workdir {params.workdir} \
         --overlap-out {output.overlap} \

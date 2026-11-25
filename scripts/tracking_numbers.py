@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Funnel of the pooled isoform build as metric<TAB>value: raw per tool -> novel candidates -> single-exon and
-unstranded dropped -> tama_merge -> tool overlap -> SQANTI filter -> final novel.
+unstranded dropped -> isomatch merge -> tool overlap -> SQANTI filter -> final novel.
 
 Without --only the funnel covers every cohort. With --only <cohort> it covers that cohort's share: its own
 assembler counts, and the merged models that at least one of its assemblies built, with the tools of that cohort
@@ -108,7 +108,7 @@ def main():
     sr_ids = {t for t, v in min_cov.items() if v > 0}
     _, lr = overlap(tools, lr_ids)
     _, sr = overlap(tools, sr_ids)
-    # The spliced, stranded candidates that went into tama_merge.
+    # The spliced, stranded candidates that went into isomatch merge.
     spliced = {t: novelcand[t] - mono[t] - unstr[t] for t in TOOLS}
 
     # Build the metric rows in funnel order. Each per-tool block ends with its total.

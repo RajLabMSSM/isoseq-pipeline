@@ -1,12 +1,15 @@
 #!/usr/bin/env python
-"""Merge the novel models of all tools and cohorts with tama_merge (Kuo et al. 2020).
+"""Merge the novel models of all tools and cohorts with isomatch merge 0.8.0 (Zheng et al. 2026, bioRxiv,
+doi:10.64898/2026.10.09.758114).
 
-The spliced, stranded novel models of the union (gffcompare class not in --exclude-codes) go in as one no_cap
-source per tool, cohort and group, and every model built by any one source is kept. The merged models are then
-classified against the reference with gffcompare (Pertea and Pertea 2020). Each merged model records which tools,
-cohorts and groups built it."""
+The spliced, stranded novel models of the union (gffcompare class not in --exclude-codes) go in as one GTF per
+tool, cohort and group, and every model built by any one source is kept. isomatch runs at its defaults, except that
+start sites are not used to split models. The merged models are then classified against the reference with
+gffcompare (Pertea and Pertea 2020). Each merged model records which tools, cohorts and groups built it, read from
+isomatch's ISOM_SRC attribute."""
 import argparse
 import glob
+import gzip
 import os
 import re
 import subprocess
@@ -25,7 +28,7 @@ def attr(field, key):
 
 
 def load_union(path):
-    # Read the union GTF into {union id: chrom, strand, sorted exons, source tool, cohort and group}.
+    # Read the union GTF into {union id: chrom, strand, sorted exons, source tool, cohort, group and gene}.
     # A group name such as TDP occurs in more than one cohort, so the group is stored as <cohort>_<group>.
     tx = {}
     with open(path) as fh:
@@ -40,7 +43,8 @@ def load_union(path):
             if d is None:
                 cohort = attr(c[8], "src_cohort")
                 d = {"chrom": c[0], "strand": c[6], "exons": [], "tool": attr(c[8], "src_tool"),
-                     "cohort": cohort, "group": "%s_%s" % (cohort, attr(c[8], "src_group"))}
+                     "cohort": cohort, "group": "%s_%s" % (cohort, attr(c[8], "src_group")),
+                     "gene": attr(c[8], "gene_id") or uid}
                 tx[uid] = d
             if c[2] == "exon":
                 d["exons"].append((int(c[3]), int(c[4])))
@@ -64,77 +68,50 @@ def load_tmap(prefix):
     return cc
 
 
-def write_bed12(path, uids, tx, name=lambda uid: uid):
-    # tama_merge input: bed12, 0-based start, sorted by chrom and start; the name field is
-    # "<gene>;<transcript>" (tama splits on ";", here the gene part is a dummy "g"), score 40, colour 0,0,0
+def write_gtf(path, uids, tx):
+    # one isomatch input per source, so ISOM_SRC names the source of every merged member
     with open(path, "w") as out:
         for uid in sorted(uids, key=lambda u: (tx[u]["chrom"], tx[u]["exons"][0][0])):
             d = tx[uid]
-            ex = d["exons"]
-            start, end = ex[0][0] - 1, ex[-1][1]
-            sizes = ",".join(str(e - s + 1) for s, e in ex)
-            starts = ",".join(str(s - 1 - start) for s, e in ex)
-            out.write("\t".join([d["chrom"], str(start), str(end), "g;" + name(uid), "40", d["strand"],
-                                 str(start), str(end), "0,0,0", str(len(ex)), sizes, starts]) + "\n")
+            out.write(gtf_lines(uid, d["gene"], d["chrom"], d["strand"], d["exons"], source="union"))
 
 
-def read_bed12(path):
-    # tama_merge output bed12 -> {merged model id: (chrom, strand, 1-based exons)}; the id is the part of the
-    # name field after ";"
-    models = {}
-    with open(path) as fh:
-        for line in fh:
-            c = line.rstrip("\n").split("\t")
-            if len(c) < 12:
-                continue
-            start = int(c[1])
-            sizes = [int(x) for x in c[10].rstrip(",").split(",")]
-            starts = [int(x) for x in c[11].rstrip(",").split(",")]
-            exons = [(start + s + 1, start + s + z) for s, z in zip(starts, sizes)]
-            mid = c[3].split(";")[1]
-            models[mid] = (c[0], c[5], exons)
-    return models
-
-
-def gtf_lines(mid, chrom, strand, exons, extra=""):
-    # one transcript line plus its exon lines; tama names models <gene>.<n>, so the gene id is the id
-    # minus its last ".<n>"
-    ids = 'gene_id "%s"; transcript_id "%s";' % (mid.rsplit(".", 1)[0], mid)
-    rows = [[chrom, "TAMA", "transcript", str(exons[0][0]), str(exons[-1][1]), ".", strand, ".", ids + extra]]
-    rows += [[chrom, "TAMA", "exon", str(s), str(e), ".", strand, ".", ids] for s, e in exons]
+def gtf_lines(mid, gene, chrom, strand, exons, extra="", source="isomatch"):
+    ids = 'gene_id "%s"; transcript_id "%s";' % (gene, mid)
+    rows = [[chrom, source, "transcript", str(exons[0][0]), str(exons[-1][1]), ".", strand, ".", ids + extra]]
+    rows += [[chrom, source, "exon", str(s), str(e), ".", strand, ".", ids] for s, e in exons]
     return "".join("\t".join(r) + "\n" for r in rows)
 
 
-def run_tama(python2, tama_merge, filelist, prefix, wobble, tes_tol, n_input):
-    # tama_merge prints errors to stdout and still exits 0
+def run_isomatch(isomatch, genome, prefix, gtfs):
+    # long-read 5' ends are unreliable after rna degradation and truncated reverse transcription, so start sites do not split models
     log = prefix + ".log"
     with open(log, "w") as lf:
-        subprocess.run([python2, tama_merge, "-f", filelist, "-p", prefix,
-                        "-m", str(wobble), "-z", str(tes_tol),
-                        "-d", "merge_dup"], check=True, stdout=lf, stderr=subprocess.STDOUT)
-    with open(log) as lf:
-        text = lf.read()
-    if "Error" in text or "TAMA Merge has completed successfully" not in text:
-        raise SystemExit("tama_merge failed, see %s:\n%s" % (log, text[-2000:]))
-    # a source model can be listed under two merged models, so count distinct members
-    members = set()
-    with open(prefix + "_merge.txt") as mf:
-        for line in mf:
-            members.add(line.split("\t")[3].split(";")[1])
-    if len(members) != n_input:
-        raise SystemExit("tama_merge consumed %d of %d input transcripts, see %s" % (len(members), n_input, log))
+        result = subprocess.run([isomatch, "merge", "--ref-fa", genome, "-o", prefix,
+                                 "--terminal-refine", "tes", "--terminal-refine-nc", "tes"] + gtfs,
+                                stdout=lf, stderr=subprocess.STDOUT)
+    if result.returncode != 0:
+        with open(log) as lf:
+            raise SystemExit("isomatch merge failed, see %s:\n%s" % (log, lf.read()[-2000:]))
 
 
-def read_members(report):
-    # tama trans_report -> {merged model id: union ids merged into it}; members are <source>_<union id>
-    members = {}
-    with open(report) as fh:
-        hdr = fh.readline().rstrip("\n").split("\t")
-        i_all = hdr.index("all_source_trans")
+def read_isomatch(path):
+    # the union ids of each merged model come from ISOM_SRC, whose records are S<input>:<union id>:... joined by "|"
+    models, members, exons = {}, {}, defaultdict(list)
+    with gzip.open(path, "rt") as fh:
         for line in fh:
-            f = line.rstrip("\n").split("\t")
-            members[f[0]] = [m.split("_", 1)[1] for m in f[i_all].split(",") if m]
-    return members
+            c = line.rstrip("\n").split("\t")
+            if line.startswith("#") or len(c) < 9:
+                continue
+            mid = attr(c[8], "transcript_id")
+            if c[2] == "exon":
+                exons[mid].append((int(c[3]), int(c[4])))
+            elif c[2] == "transcript":
+                if mid in models:
+                    raise SystemExit("isomatch wrote transcript id %s twice" % mid)
+                models[mid] = (attr(c[8], "gene_id"), c[0], c[6])
+                members[mid] = [rec.split(":", 2)[1] for rec in attr(c[8], "ISOM_SRC").split("|")]
+    return {mid: m + (sorted(exons[mid]),) for mid, m in models.items()}, members
 
 
 def main():
@@ -142,11 +119,9 @@ def main():
     ap.add_argument("--union", required=True)
     ap.add_argument("--gffcmp-prefix", required=True)
     ap.add_argument("--reference", required=True)
-    ap.add_argument("--junction-wobble", type=int, required=True)
-    ap.add_argument("--tes-tol", type=int, required=True)
+    ap.add_argument("--genome", required=True)
     ap.add_argument("--exclude-codes", required=True)
-    ap.add_argument("--tama-merge", required=True)
-    ap.add_argument("--python2", required=True)
+    ap.add_argument("--isomatch", required=True)
     ap.add_argument("--gffcompare", required=True)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--overlap-out", required=True)
@@ -163,7 +138,6 @@ def main():
     # novel candidates = class not excluded; split into single-exon, unstranded and spliced stranded models
     candidates = [uid for uid in tx if tmap.get(uid, UNMATCHED)[0] not in drop]
     mono = [uid for uid in candidates if len(tx[uid]["exons"]) == 1]
-    # tama cannot place an unstranded model
     unstranded = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] not in ("+", "-")]
     novel = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] in ("+", "-")]
 
@@ -182,35 +156,27 @@ def main():
                 k = (c, t)
                 sf.write("%s\t%s\t%d\t%d\t%d\t%d\n" % (c, t, raw[k], cand[k], mono_n[k], unstr_n[k]))
 
-    # Write one BED file per tool, cohort and group source. TAMA joins the source name and the transcript id with
-    # "_", so a source name keeps only letters and digits. Two sources could then end up with the same name, and
-    # the run stops if that happens instead of merging them.
+    # one input gtf per tool, cohort and group, written to the workdir because isomatch indexes next to its inputs
     os.makedirs(args.workdir, exist_ok=True)
-    source_of = {}
-    for d in tx.values():
-        source_of[(d["tool"], d["group"])] = re.sub(r"[^A-Za-z0-9]", "", d["tool"] + d["group"])
-    if len(set(source_of.values())) != len(source_of):
-        raise SystemExit("two tool + group pairs give the same tama source name: %s" % source_of)
     by_source = defaultdict(list)
     for uid in novel:
-        d = tx[uid]
-        by_source[source_of[(d["tool"], d["group"])]].append(uid)
-    filelist = os.path.join(args.workdir, "filelist.txt")
-    with open(filelist, "w") as fl:
-        for src in sorted(by_source):
-            bed = os.path.join(args.workdir, src + ".bed")
-            write_bed12(bed, by_source[src], tx)
-            # tama filelist row: bed, cap flag (no_cap = 5' ends not trusted), priority for
-            # 5' end, junctions, 3' end (1,1,1 = all sources equal), source name
-            fl.write("%s\tno_cap\t1,1,1\t%s\n" % (bed, src))
+        by_source[(tx[uid]["tool"], tx[uid]["group"])].append(uid)
+    gtfs = []
+    for tool, group in sorted(by_source):
+        path = os.path.join(args.workdir, "%s__%s.gtf" % (tool, group))
+        write_gtf(path, by_source[(tool, group)], tx)
+        gtfs.append(path)
 
-    # merge with tama and read back the merged models and their members
-    prefix = os.path.join(args.workdir, "tama")
-    run_tama(args.python2, args.tama_merge, filelist, prefix, args.junction_wobble, args.tes_tol,
-             len(novel))
+    # merge with isomatch and read back the merged models and their members
+    prefix = os.path.join(args.workdir, "isomatch")
+    run_isomatch(args.isomatch, args.genome, prefix, gtfs)
+    models, members = read_isomatch(prefix + ".merged.gtf.gz")
 
-    models = read_bed12(prefix + ".bed")
-    members = read_members(prefix + "_trans_report.txt")
+    # every spliced candidate must sit in exactly one merged model, or provenance would be lost or double counted
+    consumed = Counter(u for mem in members.values() for u in mem)
+    if set(consumed) != set(novel) or max(consumed.values()) > 1:
+        raise SystemExit("isomatch merged %d distinct of %d input transcripts, %d listed twice"
+                         % (len(set(consumed) & set(novel)), len(novel), sum(n > 1 for n in consumed.values())))
 
     # re-classify the merged models against the reference with gffcompare
     merged_gtf = os.path.join(args.workdir, "merged.gtf")
@@ -224,21 +190,21 @@ def main():
 
     # sort the merged models by chrom, first exon start, last exon end
     def model_position(mid):
-        chrom, _strand, exons = models[mid]
+        _gene, chrom, _strand, exons = models[mid]
         return (chrom, exons[0][0], exons[-1][1])
 
     # Every group (condition) of every cohort in this run, for the per-group support columns.
     group_names = sorted({d["group"] for d in tx.values()})
 
     # Write the consensus GTF with the class code, the reference tag and the cohorts that built each model. The
-    # tools, cohorts and groups of a model come from the union models that TAMA merged into it. The cohorts are
+    # tools, cohorts and groups of a model come from the union models that isomatch merged into it. The cohorts are
     # written in alphabetical order and joined by a comma, as in the published v9 GTF (sun, tdpkd or sun,tdpkd).
     rows = []
     order = sorted(models, key=model_position)
     with open(args.output, "w") as out:
         for mid in order:
             cc, ref_id = merged_cc.get(mid, UNMATCHED)
-            mem = members.get(mid, [])
+            mem = members[mid]
             tools = sorted({tx[u]["tool"] for u in mem})
             cohorts = sorted({tx[u]["cohort"] for u in mem})
             groups = sorted({tx[u]["group"] for u in mem})
@@ -252,7 +218,7 @@ def main():
     counts = Counter(tuple(r["tools"]) for r in rows)
     with open(args.overlap_out, "w") as out:
         out.write("# NOVEL consensus isoforms by supporting-tool combination "
-                  "(tama_merge: junctions +-wobble, 3' +-tes_tol, no_cap)\n")
+                  "(isomatch merge: default settings, terminal refine on 3' ends only)\n")
         out.write("combination\tn_isoforms\n")
         for k in range(len(TOOLS), 0, -1):
             for s in combinations(TOOLS, k):
@@ -276,10 +242,9 @@ def main():
                       % (r["transcript_id"], r["class_code"], len(r["tools"]), tool_flags, len(r["cohorts"]),
                          ",".join(r["cohorts"]), cohort_tool_flags, len(r["groups"]), group_flags))
 
-    print("* tama merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
-          "-> %d merged models (junctions +-%dbp, 3' +-%dbp, no_cap) -> %s"
-          % (len(candidates), len(mono), len(unstranded), len(novel), len(rows),
-             args.junction_wobble, args.tes_tol, args.output))
+    print("* isomatch merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
+          "-> %d merged models -> %s"
+          % (len(candidates), len(mono), len(unstranded), len(novel), len(rows), args.output))
 
 
 if __name__ == "__main__":

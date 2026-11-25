@@ -123,12 +123,12 @@ def main():
         cc_of[tid] = cc
         ref_gene_of[tid] = tx2gene.get(base(attr(c[8], "cmp_ref"))) or "NA"
         strand_of[tid] = c[6]
-        # The cohorts whose assemblies built the model, written by consensus_tama.py. Every merged model carries
+        # The cohorts whose assemblies built the model, written by consensus_isomatch.py. Every merged model carries
         # it, so a missing value stops the run instead of writing an empty attribute.
         cohorts_of[tid] = attr(c[8], "cohorts")
         if not cohorts_of[tid]:
             raise SystemExit("merged model %s has no cohorts attribute" % tid)
-    # Record the gene id that TAMA gave each kept model. Under --no-rename this id is written unchanged.
+    # Record the gene id that isomatch gave each kept model. Under --no-rename this id is written unchanged.
     merged_gene = {}
     for c in gtf_records(args.merged, ("exon",)):
         tid = attr(c[8], "transcript_id")
@@ -170,7 +170,7 @@ def main():
         return genes[0], category, genes[1:]
 
     # Build one record per kept model. Each model is renamed <prefix>_NNNNNNNN, the eight-digit form of the
-    # published XNOVEL ids, and placed on its gene. With --no-rename the model keeps its merged id and TAMA gene.
+    # published XNOVEL ids, and placed on its gene. With --no-rename the model keeps its merged id and isomatch gene.
     tx_map = {}
     for n, tid in enumerate(order, start=1):
         if args.no_rename:
@@ -185,7 +185,7 @@ def main():
     if args.provenance_out and args.membership:
         with open(args.membership) as fh:
             # Skip transcript_id, class_code and is_novel. Carry the remaining columns, which are the tool, cohort,
-            # cohort x tool and group columns of consensus_tama.py.
+            # cohort x tool and group columns of consensus_isomatch.py.
             carry = fh.readline().rstrip("\n").split("\t")[MEMBERSHIP_FIRST_CARRIED_COLUMN:]
             member = {}
             for line in fh:

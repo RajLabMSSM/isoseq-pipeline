@@ -43,7 +43,7 @@ Pooled (`cross_cohort/Snakefile`):
 
 ## Filtering
 
-**Removed before the merge:** transcripts with a GENCODE id; gffcompare `=` or `c` models (same or contained intron chain, removed again after the merge); novel single-exon models (no junction to validate); unstranded models (SQANTI3 discards them).
+**Removed before the merge:** transcripts with a GENCODE id; gffcompare `=` or `c` models (same or contained intron chain, removed again after the merge); novel single-exon models (no junction to validate); unstranded models (SQANTI3 cannot classify a model without a strand).
 
 **Merge:** isomatch 0.8.0 (Zheng et al. 2026, bioRxiv, doi:10.64898/2026.10.09.758114) at defaults, ignoring 5' ends (`--terminal-refine tes --terminal-refine-nc tes`). Models merge when they share the exon count and canonical junctions exactly, with non-canonical junctions within 3 bp and 3' ends within 50 bp. A model from any one tool is kept.
 

@@ -3,7 +3,8 @@
 
 <out>             per gene: in_reference, total and novel isoform counts
 <out>.events.tsv  per diagnostic event, the isoforms of the final gtf (GENCODE plus the novels that passed
-                  SQANTI) that carry it, traced through union -> consensus -> SQANTI -> final gtf.
+                  SQANTI) that carry it, followed through all assembler models pooled -> merged with isomatch
+                  -> SQANTI3 -> final gtf.
                   Events are junctions, GENE:chrom:start-end (first and last intron base, 1-based); several
                   junctions joined by + must all be in one isoform. RECOVERED needs an assembler
                   to have built it, since the final gtf holds the whole reference."""

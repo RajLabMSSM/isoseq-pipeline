@@ -82,7 +82,8 @@ rule compress_reference_gtf:
         "gzip -nc {input} > {output}"
 
 
-# transcript sequences of the final gtf, made with the salmon-pipeline gffread wrapper
+# write the spliced sequence of every transcript in the final gtf as fasta, which salmon indexes
+# gffread cuts each transcript's exons out of the genome, run through salmon-pipeline/scripts/make_transcriptome_fasta.sh
 rule reference_fasta:
     input:
         gtf    = OUT + NAME + ".gtf.gz",
@@ -93,7 +94,7 @@ rule reference_fasta:
         "bash {input.script} {input.gtf} {GENOME} {output}"
 
 
-# traces each positive-control junction through union -> consensus -> SQANTI -> final gtf
+# follows each positive-control junction through all assembler models pooled -> merged with isomatch -> SQANTI3 -> final gtf
 # STMN2, KCNQ2, NUP93 and XPNPEP1 are annotated in GENCODE v50 and score 0 novel, so assembled_by and assembled_in show whether our data built them
 rule sanity_genes:
     input:

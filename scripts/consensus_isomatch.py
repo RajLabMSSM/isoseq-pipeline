@@ -135,11 +135,11 @@ def main():
     tx = load_union(args.union)
     tmap = load_tmap(args.gffcmp_prefix)
 
-    # novel candidates = class not excluded; split into single-exon, unstranded and spliced stranded models
+    # novel candidates = class not excluded; split into single-exon and spliced models
+    # unstranded spliced models go into the merge too, and sqanti3 later sets them aside because it cannot classify them
     candidates = [uid for uid in tx if tmap.get(uid, UNMATCHED)[0] not in drop]
     mono = [uid for uid in candidates if len(tx[uid]["exons"]) == 1]
-    unstranded = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] not in ("+", "-")]
-    novel = [uid for uid in candidates if len(tx[uid]["exons"]) > 1 and tx[uid]["strand"] in ("+", "-")]
+    novel = [uid for uid in candidates if len(tx[uid]["exons"]) > 1]
 
     # Count the models of each cohort and tool at each step, for the stats table. raw_all counts the union, which
     # already lacks the transcripts that carry a GENCODE id.
@@ -148,13 +148,13 @@ def main():
     def count(uids):
         return Counter((tx[u]["cohort"], tx[u]["tool"]) for u in uids)
 
-    raw, cand, mono_n, unstr_n = count(tx), count(candidates), count(mono), count(unstranded)
+    raw, cand, mono_n = count(tx), count(candidates), count(mono)
     with open(args.stats_out, "w") as sf:
-        sf.write("cohort\ttool\traw_all\tnovel_candidates\tmonoexon_dropped\tunstranded_dropped\n")
+        sf.write("cohort\ttool\traw_all\tnovel_candidates\tmonoexon_dropped\n")
         for c in cohort_names:
             for t in TOOLS:
                 k = (c, t)
-                sf.write("%s\t%s\t%d\t%d\t%d\t%d\n" % (c, t, raw[k], cand[k], mono_n[k], unstr_n[k]))
+                sf.write("%s\t%s\t%d\t%d\t%d\n" % (c, t, raw[k], cand[k], mono_n[k]))
 
     # one input gtf per tool, cohort and group, written to the workdir because isomatch indexes next to its inputs
     os.makedirs(args.workdir, exist_ok=True)
@@ -242,9 +242,9 @@ def main():
                       % (r["transcript_id"], r["class_code"], len(r["tools"]), tool_flags, len(r["cohorts"]),
                          ",".join(r["cohorts"]), cohort_tool_flags, len(r["groups"]), group_flags))
 
-    print("* isomatch merge: %d novel candidates, %d single-exon and %d unstranded dropped, %d spliced "
+    print("* isomatch merge: %d novel candidates, %d single-exon dropped, %d spliced "
           "-> %d merged models -> %s"
-          % (len(candidates), len(mono), len(unstranded), len(novel), len(rows), args.output))
+          % (len(candidates), len(mono), len(novel), len(rows), args.output))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-"""Funnel of the pooled isoform build as metric<TAB>value: raw per tool -> novel candidates -> single-exon and
-unstranded dropped -> isomatch merge -> tool overlap -> SQANTI filter -> final novel.
+"""Funnel of the pooled isoform build as metric<TAB>value: raw per tool -> novel candidates -> single-exon dropped
+-> isomatch merge -> tool overlap -> SQANTI filter -> final novel.
 
 Without --only the funnel covers every cohort. With --only <cohort> it covers that cohort's share: its own
 assembler counts, and the merged models that at least one of its assemblies built, with the tools of that cohort
@@ -51,14 +51,13 @@ def main():
     args = ap.parse_args()
 
     # Sum the per-cohort, per-tool counts of the consensus stats table, over all cohorts or over the one given.
-    raw, novelcand, mono, unstr = Counter(), Counter(), Counter(), Counter()
+    raw, novelcand, mono = Counter(), Counter(), Counter()
     for r in read_table(args.stats):
         if args.only and r["cohort"] != args.only:
             continue
         raw[r["tool"]] += int(r["raw_all"])
         novelcand[r["tool"]] += int(r["novel_candidates"])
         mono[r["tool"]] += int(r["monoexon_dropped"])
-        unstr[r["tool"]] += int(r["unstranded_dropped"])
 
     # Map each consensus model in scope to the tools that built it. Under --only the tools are read from that
     # cohort's <cohort>_<tool> columns, so the other cohort's tools do not count. The cohorts of every model are
@@ -108,13 +107,13 @@ def main():
     sr_ids = {t for t, v in min_cov.items() if v > 0}
     _, lr = overlap(tools, lr_ids)
     _, sr = overlap(tools, sr_ids)
-    # The spliced, stranded candidates that went into isomatch merge.
-    spliced = {t: novelcand[t] - mono[t] - unstr[t] for t in TOOLS}
+    # The spliced candidates that went into isomatch merge.
+    spliced = {t: novelcand[t] - mono[t] for t in TOOLS}
 
     # Build the metric rows in funnel order. Each per-tool block ends with its total.
     rows = []
     for name, d in (("raw_%s_all", raw), ("novel_candidates_%s", novelcand),
-                    ("novel_monoexon_dropped_%s", mono), ("novel_unstranded_dropped_%s", unstr),
+                    ("novel_monoexon_dropped_%s", mono),
                     ("novel_spliced_candidates_%s", spliced)):
         rows += [(name % t, d[t]) for t in TOOLS]
         rows.append((name.replace("%s", "total"), sum(d.values())))

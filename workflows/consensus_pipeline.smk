@@ -5,7 +5,7 @@ sq   = OUT + "sqanti/" + NAME
 
 
 # taking a union of all 12 assembler gtfs (3 tools x 2 groups x 2 cohorts) using isomatch merge, which keeps any model from any one tool
-# gencode transcripts, = and c models, single-exon and unstranded models are removed before the merge
+# gencode transcripts, = and c models and single-exon models are removed before the merge
 rule consensus_isoforms:
     input:
         gtfs         = [path for _tool, _cohort, _group, path in TOOL_GTFS],

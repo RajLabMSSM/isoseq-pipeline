@@ -57,7 +57,7 @@ rule reference_with_novel:
         script      = SCRIPTS + "/build_reference_with_novel.py"
     output:
         gtf        = temp(OUT + NAME + ".gtf"),
-        provenance = OUT + "cross_cohort_novel_provenance.tsv"
+        provenance = OUT + "novel_isoform_discovery_by_tool_cohort_and_condition.tsv"
     shell:
         """
         python {input.script} \
@@ -126,7 +126,7 @@ rule sanity_genes:
 
 
 # the build's funnel numbers (raw -> consensus -> SQANTI -> final), every metric prefixed pooled_
-rule tracking_numbers_pooled:
+rule isoform_filtering_summary_pooled:
     input:
         stats       = cons + "_consensus_stats.tsv",
         membership  = cons + "_tool_membership.tsv",
@@ -151,7 +151,7 @@ rule tracking_numbers_pooled:
 
 
 # one cohort's share of the funnel numbers
-rule tracking_numbers_cohort:
+rule isoform_filtering_summary_cohort:
     input:
         stats       = cons + "_consensus_stats.tsv",
         membership  = cons + "_tool_membership.tsv",
@@ -184,7 +184,7 @@ rule upsert_tracking:
         cohort = expand(OUT + "isoform_filtering_summary_{cohort}.tsv", cohort=COHORT_NAMES),
         script = SCRIPTS + "/upsert_tracking_numbers.py"
     output:
-        touch(OUT + "tracking_numbers.done")
+        touch(OUT + "isoform_filtering_summary.done")
     params:
         cohort = " ".join("%s=%sisoform_filtering_summary_%s.tsv" % (c, OUT, c) for c in COHORT_NAMES)
     shell:

@@ -94,12 +94,12 @@ rule all:
     input:
         OUT + NAME + ".gtf.gz",
         OUT + NAME + ".fa.gz",
-        OUT + "cross_cohort_novel_provenance.tsv",
+        OUT + "novel_isoform_discovery_by_tool_cohort_and_condition.tsv",
         OUT + NAME + "_sanity_genes.tsv",
         OUT + "consensus/" + NAME + "_tool_overlap.tsv",
         OUT + "isoform_filtering_summary.tsv",
         expand(OUT + "isoform_filtering_summary_{cohort}.tsv", cohort=COHORT_NAMES),
-        [OUT + "tracking_numbers.done"] if config.get("tracking_numbers") else []
+        [OUT + "isoform_filtering_summary.done"] if config.get("tracking_numbers") else []
 
 
 # gffcompare, SQANTI and the scripts read a plain-text gtf

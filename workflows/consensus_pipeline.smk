@@ -135,7 +135,7 @@ rule tracking_numbers_pooled:
         ref         = REF_GTF,
         script      = SCRIPTS + "/tracking_numbers.py"
     output:
-        OUT + "tracking_numbers_final_numbers.tsv"
+        OUT + "isoform_filtering_summary.tsv"
     shell:
         """
         python {input.script} \
@@ -160,7 +160,7 @@ rule tracking_numbers_cohort:
         ref         = REF_GTF,
         script      = SCRIPTS + "/tracking_numbers.py"
     output:
-        OUT + "tracking_numbers_{cohort}.tsv"
+        OUT + "isoform_filtering_summary_{cohort}.tsv"
     wildcard_constraints:
         cohort = "|".join(COHORT_NAMES)
     shell:
@@ -180,13 +180,13 @@ rule tracking_numbers_cohort:
 # writes the funnel numbers into the project tracking table, skipped by builds without a tracking_numbers key (the T2T build)
 rule upsert_tracking:
     input:
-        pooled = OUT + "tracking_numbers_final_numbers.tsv",
-        cohort = expand(OUT + "tracking_numbers_{cohort}.tsv", cohort=COHORT_NAMES),
+        pooled = OUT + "isoform_filtering_summary.tsv",
+        cohort = expand(OUT + "isoform_filtering_summary_{cohort}.tsv", cohort=COHORT_NAMES),
         script = SCRIPTS + "/upsert_tracking_numbers.py"
     output:
         touch(OUT + "tracking_numbers.done")
     params:
-        cohort = " ".join("%s=%stracking_numbers_%s.tsv" % (c, OUT, c) for c in COHORT_NAMES)
+        cohort = " ".join("%s=%sisoform_filtering_summary_%s.tsv" % (c, OUT, c) for c in COHORT_NAMES)
     shell:
         """
         python {input.script} {config[tracking_numbers]} {config[run_code]} {input.pooled} {params.cohort}

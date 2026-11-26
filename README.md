@@ -61,7 +61,7 @@ Pooled (`cross_cohort/Snakefile`):
 | `references/novel_isoform_references/<run_code>/isoforms_<run_code>.gtf.gz`, `.fa.gz` | Final reference |
 | `.../cross_cohort_novel_provenance.tsv` | Tools, cohorts and conditions behind each novel isoform |
 | `.../isoforms_<run_code>_sanity_genes.tsv` | Positive controls per step (UNC13A, STMN2, KCNQ2, HYOU1, NUP93, XPNPEP1) |
-| `.../tracking_numbers_*.tsv` | Model counts per step |
+| `.../isoform_filtering_summary*.tsv` | Model counts per step |
 | `.../sqanti/`, `.../consensus/` | SQANTI3 classification; merged models and tool overlap |
 | `cohorts/<cohort>/isoseq-pipeline/results/<run_code>/` | CRAM alignments, MultiQC, assembler GTFs |
 

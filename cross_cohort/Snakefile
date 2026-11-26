@@ -97,8 +97,8 @@ rule all:
         OUT + "cross_cohort_novel_provenance.tsv",
         OUT + NAME + "_sanity_genes.tsv",
         OUT + "consensus/" + NAME + "_tool_overlap.tsv",
-        OUT + "tracking_numbers_final_numbers.tsv",
-        expand(OUT + "tracking_numbers_{cohort}.tsv", cohort=COHORT_NAMES),
+        OUT + "isoform_filtering_summary.tsv",
+        expand(OUT + "isoform_filtering_summary_{cohort}.tsv", cohort=COHORT_NAMES),
         [OUT + "tracking_numbers.done"] if config.get("tracking_numbers") else []
 
 

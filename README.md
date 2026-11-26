@@ -74,4 +74,3 @@ Pooled (`cross_cohort/Snakefile`):
 
 - **Settings:** pychopper kit `PCS109` (tdpkd) or `PCB114` (sun); minimap2 `splice`, k = 15; short-read introns need >= 2 unique reads; IsoQuant `sensitive_ont`; Bambu NDR 0.5. Conditions are sample-name prefixes (`TDP_1` belongs to `TDP`).
 - **Software:** pychopper 2.7.10, minimap2 2.31, samtools 1.10, NanoStat 1.6.0, Picard, MultiQC 1.25.1, StringTie 3.0.3, IsoQuant 3.13.0, Bambu 3.12.1, gffcompare 0.12.10, isomatch 0.8.0, SQANTI3 6.0.1, gffread.
-- **Environments:** conda `isoseq-pipeline`, `pychopper_env`, `multiqc`, `isoquant313`, `bambu_env`, `sqanti3_v6`; minimap2, StringTie and gffcompare paths are set in the workflow files; isomatch is the release binary at `/hpc/users/friedb09/tools/isomatch-0.8.0/isomatch`.

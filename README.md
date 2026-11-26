@@ -1,97 +1,78 @@
 # isoseq-pipeline
 
-Builds the long-read isoform atlas (`isoforms_<run_code>`): per-cohort isoform discovery from ONT cDNA
-reads, then one pooled stage over both cohorts that removes GENCODE transcripts, merges, classifies against
-GENCODE v50, filters with SQANTI3 and appends GENCODE. The code and configs are set for `v10`, whose alignment and QC
-ran on 2026-11-10 and whose discovery and pooled stage have not run yet; the last completed build is `v9`.
+## Overview
 
-## Run
+Builds a long-read isoform reference, `isoforms_<run_code>`, from Oxford Nanopore cDNA of two TDP-43 cohorts: knockdown (`tdpkd`) and overexpression (`sun`). Three assemblers discover isoforms per cohort; a pooled stage merges the novel models, filters them with SQANTI3 and adds the survivors to GENCODE v50.
 
-Each cohort folder (`cohorts/<cohort>/isoseq-pipeline/`) holds its config, metadata and logs; the code
-lives here. `run_code` in the config names the output folder.
+**Status:** `v10` alignment and QC ran on 2026-11-10; assembly and the pooled stage have not run (on hold). `v9` is the published reference. The CHM13 (T2T) configs are paused.
+
+## Quick start
+
+From the thesis repository:
 
 ```
+# one cohort (sun: cohorts/sun_tdp_overexpression/isoseq-pipeline, sun_tdp_overexpression_nanopore_config.yaml)
 cd cohorts/tdpkd/isoseq-pipeline
 sh ~/bin/snakejob -n -s ../../../pipelines/isoseq-pipeline/Snakefile -c tdp_nanopore_config.yaml   # dry run
 snakejob_HPC -s ../../../pipelines/isoseq-pipeline/Snakefile -c tdp_nanopore_config.yaml           # submit
-```
 
-`snakejob_HPC -n` submits; dry runs go through `snakejob -n`. Then the pooled stage, once both cohort runs
-have finished:
-
-```
+# pooled stage, after both cohorts
 cd pipelines/isoseq-pipeline/cross_cohort
 snakejob_HPC -s Snakefile -c cross_cohort_config.yaml
+
+# or all of it (-x: pooled only, -r: resume)
+pipelines/isoseq-pipeline/build_reference.sh
 ```
 
-`cross_cohort_config.yaml` names the two cohort configs; the pooled stage reads the genome, annotation,
-SQANTI evidence, assembler output paths and junction files from them, and stops when a cohort config has
-another `run_code`. `cross_cohort_config_chm13.yaml` is the T2T copy (no tracking-table rows).
-`build_reference.sh` launches both cohorts and chains the pooled stage behind them (`-x`: pooled stage only).
+## Workflow
 
-Metadata columns: `sample`, `condition`, `long_read_fastq`, `short_read_bam_path`. Groups are
-sample-name prefixes (`TDP_1` -> `TDP`).
+Per cohort (`Snakefile`):
 
-## Steps (v10)
+1. **Read preparation:** pychopper orients reads and trims primers.
+2. **Alignment:** minimap2 to GRCh38, guided by GENCODE v50 and STAR short-read introns.
+3. **QC:** samtools, Picard, pychopper and NanoStat, collected in MultiQC.
+4. **Discovery per condition:** StringTie (`--mix` with short reads, `-G` GENCODE-guided), IsoQuant and Bambu.
 
-1. pychopper 2.7.10 (`-m edlib`; kit PCS109 tdpkd, PCB114 sun), polyA kept
-2. minimap2 2.31 `-ax splice` (all cohorts, default k15 from the index), `--secondary=no -G 500k`,
-   `--junc-bed` = GENCODE v50 junctions + the cohort's STAR junctions (>= 2 unique reads, canonical).
-   tdpkd drops two short-read libraries via `exclude_samples`, here, in the StringTie short-read pool
-   and in the SQANTI junction coverage: TDP-5 (aberrant differentiation) and CTRL-4 (low-depth outlier).
-   CTRL4 long reads stay in, so tdpkd has 11 long-read and 10 short-read libraries. TDP2 long reads
-   combine both of its sequencing runs. sun leaves GFP_1 long reads out of the group pools via
-   `exclude_from_discovery` (aligned and QC'd, short reads kept), so sun pools 7 long-read libraries
-3. Long-read alignments are merged per group with `samtools merge`, the short-read STAR alignments
-   likewise. Per group, on the pooled long-read BAM:
-   - StringTie 3.0.3 `--mix -G` (pooled short-read BAM first; no `-t`)
-   - IsoQuant 3.13.0 `sensitive_ont`, `--complete_genedb --clean_start --large_output none`, long reads only
-   - Bambu 3.12.1, NDR 0.5, default discovery gates
-Steps 4 onwards run once, in `cross_cohort/Snakefile`, on both cohorts together.
+Pooled (`cross_cohort/Snakefile`):
 
-4. The 12 assembler GTFs (3 tools x 2 groups x 2 cohorts) combined; transcripts carrying a GENCODE id
-   removed (Bambu and IsoQuant reference passthrough by `transcript_id`, StringTie `-G` matches by
-   `reference_id`); gffcompare 0.12.10 against GENCODE v50, models of class `=` or `c`, single-exon and
-   unstranded models dropped; isomatch 0.8.0 `merge --terminal-refine tes --terminal-refine-nc tes`, otherwise
-   at its defaults (Zheng et al. 2026, bioRxiv, doi:10.64898/2026.10.09.758114), one input GTF per tool,
-   cohort and group (no tool vote); the merged models classified against GENCODE v50 with gffcompare again,
-   `=` and `c` dropped again
-5. SQANTI3 6.0.1 QC with the `SJ.out.tab` files of both cohorts (10 tdpkd + 8 sun libraries), CAGE peaks
-   and polyA motifs; `sqanti3_filter.py rules -e` with SQANTI3's default rules (intra-priming, RT switching, and canonical
-   junctions or `min_cov >= 3` short reads summed over the libraries of both cohorts)
-6. SQANTI-browser 1.1.2 (Paniagua et al. 2026, bioRxiv, doi:10.64898/2026.05.25.727625) turns
-   `_corrected.gtf` and `_RulesFilter_classification.txt` into a UCSC track hub (hg38, chromosome sizes
-   from the genome `.fai`, the SQANTI CAGE peaks as a track, `--hub-name isoforms_<run_code>`); `hubCheck`
-   validates it. Each model's details page carries its SQANTI columns, `filter_result` included
-   (`Isoform` kept, `Artifact` removed)
-7. GENCODE v50 plus the passed novels (`XNOVEL_*`, gene from SQANTI's `associated_gene`, SQANTI novel
-   genes as `XNOVELG_*` loci; a fusion is led by its 5' gene; `cohorts "tdpkd"`, `"sun"` or `"sun,tdpkd"`
-   per novel transcript), GTF + FASTA
+5. **Combine** the 12 assembler GTFs (3 tools x 2 cohorts x 2 conditions) and remove known models.
+6. **Merge** with isomatch.
+7. **Filter** with SQANTI3.
+8. **Build the reference:** GENCODE v50 plus the passing novels, renamed `XNOVEL_*`, with their SQANTI3 gene and a `cohorts` attribute.
+9. **Check** six TDP-43 positive-control junctions at every step and count models per step.
 
-QC: samtools, Picard and pychopper into MultiQC 1.25.1; NanoStat in `<data_code>_longread_qc_summary.tsv`; plus `<data_code>_read_length_hist.tsv.gz`.
+## Filtering
 
-Conda environments: `isoseq-pipeline` (`isoseq-pipeline.yml`), `pychopper_env`, `bambu_env`,
-`isoquant313`, `sqanti3_v6`, `multiqc`, `sqanti-browser` (the tool's
-`environment.yml`, then `pip install -e` of a clone of `github.com/ConesaLab/SQANTI-browser` at
-commit `8257746`). isomatch is not on bioconda; the pipeline runs the v0.8.0 Linux release binary
-(`isomatch-v0.8.0-linux-x86_64.tar.gz` from `github.com/zhengxinchang/isomatch/releases`).
+**Removed before the merge:** transcripts with a GENCODE id; gffcompare `=` or `c` models (same or contained intron chain, removed again after the merge); novel single-exon models (no junction to validate); unstranded models (SQANTI3 discards them).
+
+**Merge:** isomatch 0.8.0 (Zheng et al. 2026, bioRxiv, doi:10.64898/2026.10.09.758114) at defaults, ignoring 5' ends (`--terminal-refine tes --terminal-refine-nc tes`). Models merge when they share the exon count and canonical junctions exactly, with non-canonical junctions within 3 bp and 3' ends within 50 bp. A model from any one tool is kept.
+
+**SQANTI3 6.0.1:** default rules, with STAR junctions from all 18 short-read libraries of both cohorts (`-c`). A novel isoform passes if it shows no intra-priming (< 60% A after its 3' end), no RT-switching, and meets the junction rule:
+
+| Junctions | Short-read support needed |
+|---|---|
+| All canonical | None |
+| Any non-canonical | >= 3 unique reads on its least-covered junction, so on every junction |
 
 ## Outputs
 
-Per cohort, `results/<run_code>/`: alignments, long-read QC (`<data_code>_longread_qc_summary.tsv`,
-`_read_length_hist.tsv.gz`, `multiqc/`) and the assembler GTFs (`bambu/`, `isoquant/`, `stringtie3/`).
+| File | Contents |
+|---|---|
+| `references/novel_isoform_references/<run_code>/isoforms_<run_code>.gtf.gz`, `.fa.gz` | Final reference |
+| `.../cross_cohort_novel_provenance.tsv` | Tools, cohorts and conditions behind each novel isoform |
+| `.../isoforms_<run_code>_sanity_genes.tsv` | Positive controls per step (UNC13A, STMN2, KCNQ2, HYOU1, NUP93, XPNPEP1) |
+| `.../tracking_numbers_*.tsv` | Model counts per step |
+| `.../sqanti/`, `.../consensus/` | SQANTI3 classification; merged models and tool overlap |
+| `cohorts/<cohort>/isoseq-pipeline/results/<run_code>/` | CRAM alignments, MultiQC, assembler GTFs |
 
-Pooled, `references/novel_isoform_references/<run_code>/`: `isoforms_<run_code>.{gtf,fa}.gz`,
-`cross_cohort_novel_provenance.tsv` (one row per novel model: gene, class code, tools, cohorts, `<cohort>_<tool>`
-and group flags), `tracking_numbers_final_numbers.tsv` (pooled funnel, `pooled_` metrics) and
-`tracking_numbers_<cohort>.tsv` (each cohort's share), `isoforms_<run_code>_sanity_genes.tsv{,.events.tsv}`
-(the six TDP-43 positive controls, each found by its junction and traced stage by stage, with the tools and
-cohorts that built it: knockdown UNC13A and STMN2 cryptic exons and KCNQ2 exon 5 skip; overexpression HYOU1,
-NUP93 and XPNPEP1 exon skips), `consensus/` (merge tables) and `sqanti/`.
+## Technical details
 
-UCSC track hub: `sqanti/isoforms_<run_code>_ucsc_hub/` holds only the novel models that
-reached SQANTI, kept and removed. UCSC reads hubs only over public HTTP(S), so copy the whole folder
-to a public web server (GitHub raw URL, lab server, S3) and load the URL of its `hub.txt` under
-My Data > Track Hubs > Connected Hubs. `hg38/trix.ix` (the attribute search index) was 124 MB for tdpkd v9,
-above GitHub's 100 MB file limit. Models on unplaced scaffolds keep GENCODE names (`GL000195.1`),
-which UCSC hg38 does not know (`chrUn_GL000195v1`), so UCSC does not show them.
+| Cohort | Long reads | Short reads |
+|---|---|---|
+| tdpkd | 11 | 10 (TDP-5, CTRL-4 excluded: `exclude_samples`) |
+| sun | 8 aligned, 7 for discovery (GFP_1: `exclude_from_discovery`) | 8 |
+
+- **Settings:** pychopper kit `PCS109` (tdpkd) or `PCB114` (sun); minimap2 `splice`, k = 15; short-read introns need >= 2 unique reads; IsoQuant `sensitive_ont`; Bambu NDR 0.5. Conditions are sample-name prefixes (`TDP_1` belongs to `TDP`).
+- **Software:** pychopper 2.7.10, minimap2 2.31, samtools 1.10, NanoStat 1.6.0, Picard, MultiQC 1.25.1, StringTie 3.0.3, IsoQuant 3.13.0, Bambu 3.12.1, gffcompare 0.12.10, isomatch 0.8.0, SQANTI3 6.0.1, gffread.
+- **Environments:** conda `isoseq-pipeline`, `pychopper_env`, `multiqc`, `isoquant313`, `bambu_env`, `sqanti3_v6`; minimap2, StringTie and gffcompare paths are set in the workflow files; isomatch is the release binary at `/hpc/users/friedb09/tools/isomatch-0.8.0/isomatch`.
+- `snakejob_HPC` ignores `-n`; use `snakejob -n` for dry runs.

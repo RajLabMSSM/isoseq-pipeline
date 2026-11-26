@@ -34,8 +34,7 @@ rule novel_consensus_gtf:
 # The CAGE peaks and the polyA motif list only add information to the QC report. No filter rule reads them.
 # Old genePred files are removed first, because SQANTI otherwise reuses a stale one.
 # One thread is enough. The input is a GTF, so SQANTI aligns nothing and has no work to split.
-# The _corrected.gtf file is declared because rule sqanti_browser draws the models from it.
-# SQANTI also writes a _corrected.fasta file. Nothing reads it, so it is not declared as an output.
+# SQANTI also writes _corrected.gtf and _corrected.fasta files. Nothing reads them, so they are not declared as outputs.
 rule sqanti_qc:
     input:
         gtf = sq + "_novel_consensus.gtf",
@@ -43,8 +42,7 @@ rule sqanti_qc:
         fa  = GENOME,
         sj  = SQANTI_SJ
     output:
-        classification = sq + "_classification.txt",
-        corrected_gtf  = sq + "_corrected.gtf"
+        classification = sq + "_classification.txt"
     params:
         outdir = OUT + "sqanti/",
         sj     = ",".join(SQANTI_SJ)
@@ -85,51 +83,4 @@ rule sqanti_filter:
         -e \\
         -d {params.outdir} \\
         -o {NAME}
-        """
-
-
-# Build a UCSC Genome Browser track hub from the SQANTI calls with SQANTI-browser (Paniagua et al. 2026, bioRxiv,
-# doi:10.64898/2026.05.25.727625).
-# The main track colours each model by its SQANTI structural category, and one hidden track per category follows it.
-# The input is the rules-filter classification, which is the QC classification plus the filter_result column.
-# SQANTI-browser keeps every classification column as a field of the model's details page. A model kept by the
-# filter therefore reads Isoform there and a removed one reads Artifact, so both can be inspected side by side.
-# Only novel models reach SQANTI, so the hub holds no GENCODE transcript. The browser's own GENCODE track serves
-# for comparison.
-# The CAGE track is the same peak file that sqanti_qc used for dist_to_CAGE_peak, so it shows that evidence.
-# Chromosome sizes are taken from the genome index. Without them the tool guesses each length from the furthest feature.
-# GENCODE names unplaced scaffolds like GL000195.1, while UCSC hg38 names them like chrUn_GL000195v1. Models on these
-# scaffolds stay in the bigBed files, but UCSC hg38 cannot display them (83 of 47,410 models in tdpkd v9).
-# The hub name is the build name, such as isoforms_v10.
-# hubCheck then checks the hub and opens every bigBed file, and the job fails if it reports a problem.
-# hubCheck gets hub.txt by its absolute path, because it looks for the track files in the wrong folder from a relative one.
-# UCSC reads a hub only over public HTTP, so the hub folder must be copied to a public web server by hand (see README).
-rule sqanti_browser:
-    input:
-        gtf            = sq + "_corrected.gtf",
-        classification = sq + "_RulesFilter_classification.txt",
-        fai            = GENOME + ".fai",
-        cage           = SHARED["sqanti_cage_peak"]
-    output:
-        hub         = directory(sq + "_ucsc_hub"),
-        chrom_sizes = temp(sq + "_chrom.sizes")
-    params:
-        hub_txt = os.path.abspath(sq + "_ucsc_hub/hub.txt"),
-        # UCSC's name for the genome the models sit on. hg38 cohort configs leave ucsc_genome out, and T2T configs
-        # set it to hs1, which is UCSC's name for T2T-CHM13v2.0.
-        ucsc_genome = SHARED["ucsc_genome"]
-    threads: 1
-    shell:
-        """
-        conda activate sqanti-browser
-        cut -f1,2 {input.fai} > {output.chrom_sizes}
-        python -m sqanti_browser \\
-        --gtf {input.gtf} \\
-        --classification {input.classification} \\
-        --CAGE-peak {input.cage} \\
-        --chrom-sizes {output.chrom_sizes} \\
-        --genome {params.ucsc_genome} \\
-        --hub-name {NAME} \\
-        --output {output.hub}
-        hubCheck {params.hub_txt}
         """

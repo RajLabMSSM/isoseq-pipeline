@@ -40,7 +40,7 @@ for cohort_name, cfg in COHORT_CFG.items():
         raise ValueError("cohort %s has run_code %s, this build is %s" % (cohort_name, cfg["run_code"], RUN))
 
 # the cohorts must agree on genome, annotation and SQANTI evidence files, because one SQANTI run covers them all.
-# the positive controls and UCSC genome name default to the hg38 values below
+# the positive controls default to the hg38 values below
 HG38_SANITY_EVENTS = ("UNC13A:chr19:17641557-17642413+17642542-17642844," # because both junctions are on either end of the cryptic exon
                       "STMN2:chr8:79611215-79616821,"
                       "KCNQ2:chr20:63439709-63444658,"
@@ -49,8 +49,7 @@ HG38_SANITY_EVENTS = ("UNC13A:chr19:17641557-17642413+17642542-17642844," # beca
                       "XPNPEP1:chr10:109884149-109888048")
 SHARED = {}
 for key, default in (("ref_genome", None), ("ref_gtf", None), ("sqanti_cage_peak", None),
-                     ("sqanti_polya_motifs", None), ("sanity_event_list", HG38_SANITY_EVENTS),
-                     ("ucsc_genome", "hg38")):
+                     ("sqanti_polya_motifs", None), ("sanity_event_list", HG38_SANITY_EVENTS)):
     values = {cfg.get(key, default) for cfg in COHORT_CFG.values()}
     if len(values) != 1 or None in values:
         raise ValueError("the cohort configs disagree on %s: %s" % (key, values))
@@ -100,7 +99,6 @@ rule all:
         OUT + "consensus/" + NAME + "_tool_overlap.tsv",
         OUT + "tracking_numbers_final_numbers.tsv",
         expand(OUT + "tracking_numbers_{cohort}.tsv", cohort=COHORT_NAMES),
-        OUT + "sqanti/" + NAME + "_ucsc_hub",
         [OUT + "tracking_numbers.done"] if config.get("tracking_numbers") else []
 
 

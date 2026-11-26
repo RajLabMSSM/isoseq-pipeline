@@ -46,7 +46,7 @@ rule consensus_isoforms:
 
 
 # the reference verbatim plus the SQANTI-passed novels, renamed XNOVEL_*, gene from SQANTI's associated_gene
-# each novel keeps a cohorts attribute (sun, tdpkd or both) and one row in the provenance table
+# each novel keeps a cohorts attribute (sun, tdpkd or both) and one row in novel_isoform_discovery_by_tool_cohort_and_condition.tsv
 rule reference_with_novel:
     input:
         merged      = cons + "_merged_consensus.gtf",
@@ -125,7 +125,7 @@ rule sanity_genes:
         """
 
 
-# the build's funnel numbers (raw -> consensus -> SQANTI -> final), every metric prefixed pooled_
+# isoform_filtering_summary.tsv: model counts at each step (raw, consensus, SQANTI, final), every metric prefixed pooled_
 rule isoform_filtering_summary_pooled:
     input:
         stats       = cons + "_consensus_stats.tsv",
@@ -150,7 +150,7 @@ rule isoform_filtering_summary_pooled:
         """
 
 
-# one cohort's share of the funnel numbers
+# isoform_filtering_summary_<cohort>.tsv: the same counts for one cohort's share
 rule isoform_filtering_summary_cohort:
     input:
         stats       = cons + "_consensus_stats.tsv",
@@ -177,7 +177,7 @@ rule isoform_filtering_summary_cohort:
         """
 
 
-# writes the funnel numbers into the project tracking table, skipped by builds without a tracking_numbers key (the T2T build)
+# copies the isoform filtering summaries into the project tracking table, skipped by builds without a tracking_numbers key (the T2T build)
 rule upsert_tracking:
     input:
         pooled = OUT + "isoform_filtering_summary.tsv",

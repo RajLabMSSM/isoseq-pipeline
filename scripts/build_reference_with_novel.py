@@ -26,7 +26,7 @@ from collections import namedtuple
 NovelRecord = namedtuple("NovelRecord",
                          ["new_tid", "gene_id", "ref_gene", "class_code", "gene_assignment", "bridging", "cohorts"])
 # The membership table starts with transcript_id, class_code and is_novel.
-# The columns after these are the per-tool columns that are copied into the provenance table.
+# The columns after these are the per-tool columns that are copied into novel_isoform_discovery_by_tool_cohort_and_condition.tsv.
 MEMBERSHIP_FIRST_CARRIED_COLUMN = 3
 
 
@@ -181,7 +181,7 @@ def main():
             tx_map[tid] = NovelRecord("%s_%08d" % (args.prefix, n), gid, ref_gene_of[tid], cc_of[tid],
                                       how, bridging, cohorts_of[tid])
 
-    # Write the provenance table: each new record plus the per-tool membership columns of its merged model.
+    # Write novel_isoform_discovery_by_tool_cohort_and_condition.tsv: each new record plus the per-tool membership columns of its merged model.
     if args.provenance_out and args.membership:
         with open(args.membership) as fh:
             # Skip transcript_id, class_code and is_novel. Carry the remaining columns, which are the tool, cohort,

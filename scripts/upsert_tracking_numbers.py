@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Add one isoseq build to the project tracking table, replacing the older isoseq rows of each cohort.
 
-Each cohort gets its own share of the funnel, plus the pooled rows (metric names starting with pooled_) repeated
+Each cohort gets its own isoform filtering summary, plus the pooled rows (metric names starting with pooled_) repeated
 under its name.
 
 usage: upsert_tracking_numbers.py <tracking_numbers.tsv> <run_code> <pooled_tracking.tsv> <cohort>=<tracking.tsv> ..."""
@@ -28,7 +28,7 @@ def read_metrics(path):
 
 
 def main(tracking, run_code, union, cohort_args):
-    # Build the new rows for each cohort: its funnel, then the cross-cohort rows, then the run code.
+    # Build the new rows for each cohort: its summary, then the cross-cohort rows, then the run code.
     cohorts = dict(a.split("=", 1) for a in cohort_args)
     union_rows = read_metrics(union)
     new = []

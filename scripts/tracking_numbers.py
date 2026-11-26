@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Funnel of the pooled isoform build as metric<TAB>value: raw per tool -> novel candidates -> single-exon dropped
+"""Isoform filtering summary of the pooled build as metric<TAB>value: raw per tool -> novel candidates -> single-exon dropped
 -> isomatch merge -> tool overlap -> SQANTI filter -> final novel.
 
-Without --only the funnel covers every cohort. With --only <cohort> it covers that cohort's share: its own
+Without --only the summary covers every cohort. With --only <cohort> it covers that cohort's share: its own
 assembler counts, and the merged models that at least one of its assemblies built, with the tools of that cohort
-only. A model built in both cohorts therefore counts in both cohort funnels.
+only. A model built in both cohorts therefore counts in both cohort summaries.
 
 raw_*_all counts the union after the transcripts that carry a GENCODE id were removed. collapsed_removed = spliced
 candidates - consensus models. lr_specific / sr_supported split the consensus models by SQANTI's min_cov (0 = a
@@ -45,7 +45,7 @@ def main():
     ap.add_argument("--pass-ids", required=True)
     ap.add_argument("--reference", required=True)
     ap.add_argument("--cohort", required=True, help="label written in the first row")
-    ap.add_argument("--only", help="restrict the funnel to the models built by this cohort")
+    ap.add_argument("--only", help="restrict the summary to the models built by this cohort")
     ap.add_argument("--metric-prefix", default="", help="put in front of every metric name")
     ap.add_argument("-o", "--output", required=True)
     args = ap.parse_args()
@@ -110,7 +110,7 @@ def main():
     # The spliced candidates that went into isomatch merge.
     spliced = {t: novelcand[t] - mono[t] for t in TOOLS}
 
-    # Build the metric rows in funnel order. Each per-tool block ends with its total.
+    # Build the metric rows in step order. Each per-tool block ends with its total.
     rows = []
     for name, d in (("raw_%s_all", raw), ("novel_candidates_%s", novelcand),
                     ("novel_monoexon_dropped_%s", mono),

@@ -172,7 +172,7 @@ def main():
     run_isomatch(args.isomatch, args.genome, prefix, gtfs)
     models, members = read_isomatch(prefix + ".merged.gtf.gz")
 
-    # every spliced candidate must sit in exactly one merged model, or provenance would be lost or double counted
+    # every spliced candidate must sit in exactly one merged model, or its tool, cohort and condition would be lost or double counted
     consumed = Counter(u for mem in members.values() for u in mem)
     if set(consumed) != set(novel) or max(consumed.values()) > 1:
         raise SystemExit("isomatch merged %d distinct of %d input transcripts, %d listed twice"
@@ -228,7 +228,7 @@ def main():
     # names of the cohorts, a 0/1 column per cohort and tool (<cohort>_<tool>), and the number of groups with a
     # 0/1 column per group (group_<cohort>_<group>). A model built in one cohort or one condition only can so be
     # told apart. Readers pick columns by name, and build_reference_with_novel.py carries every column after
-    # is_novel into the provenance table.
+    # is_novel into novel_isoform_discovery_by_tool_cohort_and_condition.tsv.
     cohort_tool_cols = [(c, t) for c in cohort_names for t in TOOLS]
     with open(args.membership_out, "w") as out:
         out.write("transcript_id\tclass_code\tis_novel\tn_tools\t%s\tn_cohorts\tcohorts\t%s\tn_groups\t%s\n"

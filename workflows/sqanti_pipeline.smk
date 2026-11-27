@@ -63,12 +63,14 @@ rule sqanti_qc:
         """
 
 
-# filter with SQANTI3's own default rules (Pardo-Palacios et al. 2024), as no -j file is given
+# filter with SQANTI3's default rules (Pardo-Palacios et al. 2024) plus a third rest rule in misc/sqanti_filter_rules.json
+# the third rule keeps a model flagged for RT template switching only when every junction has >= 3 short reads (min_cov)
 # -e is only a safeguard, because single-exon models never reach SQANTI
 # the filtering reasons file is read by rule sanity_genes
 rule sqanti_filter:
     input:
-        classification = sq + "_classification.txt"
+        classification = sq + "_classification.txt",
+        rules          = ISOSEQ_DIR + "/misc/sqanti_filter_rules.json"
     output:
         classification = sq + "_RulesFilter_classification.txt",
         pass_ids       = sq + "_pass_isoforms.txt",
@@ -80,6 +82,7 @@ rule sqanti_filter:
         conda activate sqanti3_v6
         sqanti3_filter.py rules \\
         --sqanti_class {input.classification} \\
+        -j {input.rules} \\
         -e \\
         -d {params.outdir} \\
         -o {NAME}
